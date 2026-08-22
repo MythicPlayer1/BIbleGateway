@@ -70,7 +70,11 @@ export default function Home() {
   };
 
   const handleOpenProjector = () => {
-    window.open('/projector', '_blank', 'width=800,height=600');
+    window.open(
+      '/projector', 
+      'projectorWindow', 
+      'width=1024,height=768,popup=yes,menubar=no,toolbar=no,location=no,status=no,resizable=yes'
+    );
   };
 
   const activeBookInfo = books.find(b => b.id === selectedBook);
