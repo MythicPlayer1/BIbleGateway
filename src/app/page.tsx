@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useRef } from "react";
 import { books } from "@/lib/books";
-import { MonitorPlay, ChevronLeft, ChevronRight, BookOpen, Hash, List } from "lucide-react";
+import { MonitorPlay, ChevronLeft, ChevronRight, BookOpen, Hash, List, Image as ImageIcon, Trash2 } from "lucide-react";
 
 export default function Home() {
   const [selectedBook, setSelectedBook] = useState(0);
@@ -11,6 +11,7 @@ export default function Home() {
   
   const [verses, setVerses] = useState<{verseNumber: number, text: string}[]>([]);
   const [loading, setLoading] = useState(false);
+  const [bgFileName, setBgFileName] = useState<string | null>(null);
   
   const channelRef = useRef<BroadcastChannel | null>(null);
 
@@ -75,6 +76,27 @@ export default function Home() {
       'projectorWindow', 
       'width=1024,height=768,popup=yes,menubar=no,toolbar=no,location=no,status=no,resizable=yes'
     );
+  };
+
+  const handleBackgroundUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file && channelRef.current) {
+      setBgFileName(file.name);
+      channelRef.current.postMessage({
+        type: 'SET_BACKGROUND',
+        file: file,
+        fileType: file.type.startsWith('video') ? 'video' : 'image'
+      });
+    }
+  };
+
+  const handleClearBackground = () => {
+    setBgFileName(null);
+    if (channelRef.current) {
+      channelRef.current.postMessage({
+        type: 'CLEAR_BACKGROUND'
+      });
+    }
   };
 
   const activeBookInfo = books.find(b => b.id === selectedBook);
@@ -183,11 +205,31 @@ export default function Home() {
             </div>
           </div>
           
-          <div className="bg-indigo-50 p-6 rounded-2xl border border-indigo-100">
-            <h3 className="font-semibold text-indigo-900 mb-2">Tip</h3>
-            <p className="text-sm text-indigo-700 leading-relaxed">
-              Use the arrow buttons in the preview pane or select a specific verse from the dropdown. The projector window will update instantly.
-            </p>
+          {/* Background Media Controls */}
+          <div className="bg-white p-6 rounded-2xl shadow-sm border border-neutral-200/60">
+            <h2 className="text-lg font-semibold mb-6 flex items-center gap-2 text-neutral-800">
+              <ImageIcon size={20} className="text-indigo-500" />
+              Projector Background
+            </h2>
+            <div className="space-y-4">
+              <label className="flex flex-col items-center justify-center w-full h-32 border-2 border-dashed border-indigo-200 rounded-xl cursor-pointer bg-indigo-50/50 hover:bg-indigo-50 transition-colors">
+                <div className="flex flex-col items-center justify-center pt-5 pb-6">
+                  <ImageIcon className="w-8 h-8 text-indigo-400 mb-2" />
+                  <p className="text-sm text-indigo-700 font-medium">Click to upload photo or video</p>
+                  <p className="text-xs text-indigo-500 mt-1">MP4, JPG, PNG</p>
+                </div>
+                <input type="file" className="hidden" accept="image/*,video/*" onChange={handleBackgroundUpload} />
+              </label>
+
+              {bgFileName && (
+                <div className="flex items-center justify-between bg-neutral-100 px-4 py-3 rounded-xl border border-neutral-200">
+                  <span className="text-sm text-neutral-700 truncate max-w-[200px] font-medium">{bgFileName}</span>
+                  <button onClick={handleClearBackground} className="text-red-500 hover:text-red-600 transition-colors p-1" title="Remove Background">
+                    <Trash2 size={18} />
+                  </button>
+                </div>
+              )}
+            </div>
           </div>
         </div>
 
@@ -207,12 +249,12 @@ export default function Home() {
             {/* Display Screen Mimic */}
             <div className="flex-1 bg-[#0a0a0a] m-6 rounded-2xl relative flex flex-col items-center justify-center p-12 overflow-hidden shadow-inner">
               {loading ? (
-                <div className="flex flex-col items-center gap-4 text-neutral-500">
+                <div className="flex flex-col items-center gap-4 text-neutral-500 relative z-20">
                   <div className="w-8 h-8 border-4 border-neutral-600 border-t-neutral-300 rounded-full animate-spin"></div>
                   <p className="animate-pulse font-medium">Loading scripture...</p>
                 </div>
               ) : verses.length > 0 ? (
-                <div className="w-full max-w-3xl flex flex-col items-center text-center">
+                <div className="w-full max-w-3xl flex flex-col items-center text-center relative z-20">
                   <p className="text-3xl md:text-4xl lg:text-5xl font-bold text-white leading-tight mb-8">
                     {currentVerseText}
                   </p>
@@ -221,7 +263,7 @@ export default function Home() {
                   </p>
                 </div>
               ) : (
-                <p className="text-neutral-500 text-lg">No verses available in this chapter.</p>
+                <p className="text-neutral-500 text-lg relative z-20">No verses available in this chapter.</p>
               )}
             </div>
 
