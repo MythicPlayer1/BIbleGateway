@@ -31,7 +31,8 @@ export default function ProjectorPage() {
       }
       else if (event.data.type === 'SET_BACKGROUND') {
         if (bgUrl) URL.revokeObjectURL(bgUrl);
-        const newUrl = URL.createObjectURL(event.data.file);
+        const blob = new Blob([event.data.buffer], { type: event.data.mime });
+        const newUrl = URL.createObjectURL(blob);
         setBgUrl(newUrl);
         setBgType(event.data.fileType);
       }

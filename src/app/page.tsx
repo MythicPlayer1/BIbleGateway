@@ -81,15 +81,22 @@ export default function Home() {
     );
   };
 
-  const handleBackgroundUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleBackgroundUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file && channelRef.current) {
       setBgFileName(file.name);
-      channelRef.current.postMessage({
-        type: 'SET_BACKGROUND',
-        file: file,
-        fileType: file.type.startsWith('video') ? 'video' : 'image'
-      });
+      
+      try {
+        const buffer = await file.arrayBuffer();
+        channelRef.current.postMessage({
+          type: 'SET_BACKGROUND',
+          buffer: buffer,
+          mime: file.type,
+          fileType: file.type.startsWith('video') ? 'video' : 'image'
+        });
+      } catch (err) {
+        console.error("Failed to read file for background", err);
+      }
     }
   };
 
