@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useRef } from "react";
 import { books } from "@/lib/books";
-import { MonitorPlay, ChevronLeft, ChevronRight, BookOpen, Hash, List, Image as ImageIcon, Trash2 } from "lucide-react";
+import { MonitorPlay, ChevronLeft, ChevronRight, BookOpen, Hash, List, Image as ImageIcon, Trash2, EyeOff, Eye } from "lucide-react";
 
 export default function Home() {
   const [selectedBook, setSelectedBook] = useState(0);
@@ -12,6 +12,7 @@ export default function Home() {
   const [verses, setVerses] = useState<{verseNumber: number, text: string}[]>([]);
   const [loading, setLoading] = useState(false);
   const [bgFileName, setBgFileName] = useState<string | null>(null);
+  const [isTextHidden, setIsTextHidden] = useState(false);
   
   const channelRef = useRef<BroadcastChannel | null>(null);
 
@@ -49,6 +50,8 @@ export default function Home() {
       const verseData = verses.find(v => v.verseNumber === selectedVerse);
       if (verseData && channelRef.current) {
         const bookName = books.find(b => b.id === selectedBook)?.name;
+        // Un-hide the text automatically if they select a new verse
+        setIsTextHidden(false);
         channelRef.current.postMessage({
           type: 'SET_VERSE',
           text: verseData.text,
@@ -95,6 +98,16 @@ export default function Home() {
     if (channelRef.current) {
       channelRef.current.postMessage({
         type: 'CLEAR_BACKGROUND'
+      });
+    }
+  };
+
+  const toggleHideText = () => {
+    const newState = !isTextHidden;
+    setIsTextHidden(newState);
+    if (channelRef.current) {
+      channelRef.current.postMessage({
+        type: newState ? 'HIDE_TEXT' : 'SHOW_TEXT'
       });
     }
   };
@@ -240,14 +253,23 @@ export default function Home() {
             {/* Display Header */}
             <div className="bg-neutral-50 border-b border-neutral-200/60 px-6 py-4 flex items-center justify-between">
               <span className="text-sm font-semibold text-neutral-500 tracking-wider uppercase">Live Preview</span>
-              <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-100 text-emerald-700 text-xs font-bold">
-                <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
-                SYNC ACTIVE
-              </span>
+              <div className="flex items-center gap-4">
+                <button 
+                  onClick={toggleHideText}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-bold transition-colors ${isTextHidden ? 'bg-amber-100 text-amber-700 hover:bg-amber-200' : 'bg-neutral-200 text-neutral-700 hover:bg-neutral-300'}`}
+                >
+                  {isTextHidden ? <EyeOff size={16} /> : <Eye size={16} />}
+                  {isTextHidden ? 'TEXT HIDDEN' : 'HIDE TEXT'}
+                </button>
+                <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-emerald-100 text-emerald-700 text-xs font-bold">
+                  <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+                  SYNC ACTIVE
+                </span>
+              </div>
             </div>
 
             {/* Display Screen Mimic */}
-            <div className="flex-1 bg-[#0a0a0a] m-6 rounded-2xl relative flex flex-col items-center justify-center p-12 overflow-hidden shadow-inner">
+            <div className={`flex-1 bg-[#0a0a0a] m-6 rounded-2xl relative flex flex-col items-center justify-center p-12 overflow-hidden shadow-inner transition-opacity duration-300 ${isTextHidden ? 'opacity-40' : 'opacity-100'}`}>
               {loading ? (
                 <div className="flex flex-col items-center gap-4 text-neutral-500 relative z-20">
                   <div className="w-8 h-8 border-4 border-neutral-600 border-t-neutral-300 rounded-full animate-spin"></div>

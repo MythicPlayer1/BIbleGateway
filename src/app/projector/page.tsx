@@ -5,6 +5,7 @@ import { useEffect, useLayoutEffect, useState, useRef } from "react";
 export default function ProjectorPage() {
   const [verse, setVerse] = useState({ text: "Welcome. Please select a verse.", reference: "" });
   const [fade, setFade] = useState(false);
+  const [isTextHidden, setIsTextHidden] = useState(false);
   
   // Background state
   const [bgUrl, setBgUrl] = useState<string | null>(null);
@@ -18,6 +19,7 @@ export default function ProjectorPage() {
     
     channel.onmessage = (event) => {
       if (event.data.type === 'SET_VERSE') {
+        setIsTextHidden(false); // Unhide text when changing verses
         setFade(true);
         setTimeout(() => {
           setVerse({
@@ -28,9 +30,7 @@ export default function ProjectorPage() {
         }, 150);
       }
       else if (event.data.type === 'SET_BACKGROUND') {
-        // Cleanup old URL to prevent memory leaks
         if (bgUrl) URL.revokeObjectURL(bgUrl);
-        
         const newUrl = URL.createObjectURL(event.data.file);
         setBgUrl(newUrl);
         setBgType(event.data.fileType);
@@ -39,6 +39,12 @@ export default function ProjectorPage() {
         if (bgUrl) URL.revokeObjectURL(bgUrl);
         setBgUrl(null);
         setBgType(null);
+      }
+      else if (event.data.type === 'HIDE_TEXT') {
+        setIsTextHidden(true);
+      }
+      else if (event.data.type === 'SHOW_TEXT') {
+        setIsTextHidden(false);
       }
     };
 
@@ -96,7 +102,9 @@ export default function ProjectorPage() {
 
       {/* Main Content */}
       <div 
-        className={`w-full max-w-[90vw] mx-auto flex flex-col items-center text-center transition-opacity duration-300 ease-in-out relative z-10 ${fade ? 'opacity-0 scale-[0.99]' : 'opacity-100 scale-100'}`}
+        className={`w-full max-w-[90vw] mx-auto flex flex-col items-center text-center transition-opacity duration-500 ease-in-out relative z-10 ${
+          isTextHidden ? 'opacity-0 scale-95' : fade ? 'opacity-0 scale-[0.99]' : 'opacity-100 scale-100'
+        }`}
       >
         <p 
           ref={textRef}
