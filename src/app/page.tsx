@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useRef } from "react";
 import { books } from "@/lib/books";
+import { MonitorPlay, ChevronLeft, ChevronRight, BookOpen, Hash, List } from "lucide-react";
 
 export default function Home() {
   const [selectedBook, setSelectedBook] = useState(0);
@@ -28,7 +29,6 @@ export default function Home() {
         const data = await res.json();
         if (data.verses) {
           setVerses(data.verses);
-          // If the selected verse is out of bounds for the new chapter, reset to 1
           if (selectedVerse > data.verses.length) {
             setSelectedVerse(1);
           }
@@ -80,118 +80,180 @@ export default function Home() {
   const activeBookInfo = books.find(b => b.id === selectedBook);
   const totalChapters = activeBookInfo?.chapters || 1;
 
+  const currentVerseText = verses.find(v => v.verseNumber === selectedVerse)?.text || "";
+
   return (
-    <div className="min-h-screen bg-gray-50 p-8 text-gray-900 font-sans">
-      <div className="max-w-4xl mx-auto bg-white rounded-xl shadow-lg overflow-hidden">
-        
-        {/* Header */}
-        <div className="bg-blue-600 text-white p-6 flex justify-between items-center">
-          <h1 className="text-2xl font-bold">Bible Projector Control</h1>
+    <div className="min-h-screen bg-neutral-50 text-neutral-900 font-sans selection:bg-indigo-100 selection:text-indigo-900">
+      {/* Navbar */}
+      <header className="bg-white border-b border-neutral-200 sticky top-0 z-10">
+        <div className="max-w-6xl mx-auto px-6 h-20 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="bg-indigo-600 text-white p-2.5 rounded-xl shadow-md shadow-indigo-200">
+              <BookOpen size={24} />
+            </div>
+            <h1 className="text-2xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-indigo-600 to-violet-600">
+              Bible Projector
+            </h1>
+          </div>
           <button 
             onClick={handleOpenProjector}
-            className="bg-white text-blue-600 font-semibold px-4 py-2 rounded shadow hover:bg-blue-50 transition"
+            className="group flex items-center gap-2 bg-neutral-900 text-white font-medium px-5 py-2.5 rounded-full shadow hover:bg-neutral-800 hover:shadow-lg transition-all active:scale-95"
           >
-            Open Projector Window
+            <MonitorPlay size={18} className="group-hover:text-indigo-400 transition-colors" />
+            Launch Display
           </button>
         </div>
+      </header>
 
-        {/* Controls */}
-        <div className="p-6 border-b">
-          <div className="flex flex-wrap gap-4">
+      <main className="max-w-6xl mx-auto px-6 py-10 grid lg:grid-cols-12 gap-10">
+        
+        {/* Left Column: Controls */}
+        <div className="lg:col-span-4 space-y-8">
+          <div className="bg-white p-6 rounded-2xl shadow-sm border border-neutral-200/60">
+            <h2 className="text-lg font-semibold mb-6 flex items-center gap-2 text-neutral-800">
+              <List size={20} className="text-indigo-500" />
+              Scripture Selection
+            </h2>
             
-            {/* Book Select */}
-            <div className="flex-1 min-w-[200px]">
-              <label className="block text-sm font-medium text-gray-700 mb-1">Book</label>
-              <select 
-                value={selectedBook} 
-                onChange={(e) => {
-                  setSelectedBook(Number(e.target.value));
-                  setSelectedChapter(1);
-                  setSelectedVerse(1);
-                }}
-                className="w-full border border-gray-300 rounded p-2 focus:ring-blue-500 focus:border-blue-500"
-              >
-                {books.map(book => (
-                  <option key={book.id} value={book.id}>{book.name} ({book.englishName})</option>
-                ))}
-              </select>
-            </div>
+            <div className="space-y-5">
+              {/* Book Select */}
+              <div>
+                <label className="block text-sm font-medium text-neutral-600 mb-2">Book</label>
+                <div className="relative">
+                  <select 
+                    value={selectedBook} 
+                    onChange={(e) => {
+                      setSelectedBook(Number(e.target.value));
+                      setSelectedChapter(1);
+                      setSelectedVerse(1);
+                    }}
+                    className="w-full appearance-none bg-neutral-50 border border-neutral-300 rounded-xl px-4 py-3 pr-10 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-shadow outline-none text-neutral-800 font-medium"
+                  >
+                    {books.map(book => (
+                      <option key={book.id} value={book.id}>{book.name} ({book.englishName})</option>
+                    ))}
+                  </select>
+                  <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-4 text-neutral-500">
+                    <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7"></path></svg>
+                  </div>
+                </div>
+              </div>
 
-            {/* Chapter Select */}
-            <div className="flex-1 min-w-[100px]">
-              <label className="block text-sm font-medium text-gray-700 mb-1">Chapter</label>
-              <select 
-                value={selectedChapter} 
-                onChange={(e) => {
-                  setSelectedChapter(Number(e.target.value));
-                  setSelectedVerse(1);
-                }}
-                className="w-full border border-gray-300 rounded p-2 focus:ring-blue-500 focus:border-blue-500"
-              >
-                {Array.from({ length: totalChapters }, (_, i) => i + 1).map(c => (
-                  <option key={c} value={c}>{c}</option>
-                ))}
-              </select>
-            </div>
+              {/* Chapter Select */}
+              <div>
+                <label className="block text-sm font-medium text-neutral-600 mb-2">Chapter</label>
+                <div className="relative">
+                  <select 
+                    value={selectedChapter} 
+                    onChange={(e) => {
+                      setSelectedChapter(Number(e.target.value));
+                      setSelectedVerse(1);
+                    }}
+                    className="w-full appearance-none bg-neutral-50 border border-neutral-300 rounded-xl px-4 py-3 pr-10 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-shadow outline-none text-neutral-800 font-medium"
+                  >
+                    {Array.from({ length: totalChapters }, (_, i) => i + 1).map(c => (
+                      <option key={c} value={c}>Chapter {c}</option>
+                    ))}
+                  </select>
+                  <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-4 text-neutral-500">
+                    <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7"></path></svg>
+                  </div>
+                </div>
+              </div>
 
-            {/* Verse Select */}
-            <div className="flex-1 min-w-[100px]">
-              <label className="block text-sm font-medium text-gray-700 mb-1">Verse</label>
-              <select 
-                value={selectedVerse} 
-                onChange={(e) => setSelectedVerse(Number(e.target.value))}
-                className="w-full border border-gray-300 rounded p-2 focus:ring-blue-500 focus:border-blue-500"
-                disabled={verses.length === 0}
-              >
-                {verses.map(v => (
-                  <option key={v.verseNumber} value={v.verseNumber}>{v.verseNumber}</option>
-                ))}
-              </select>
+              {/* Verse Select */}
+              <div>
+                <label className="block text-sm font-medium text-neutral-600 mb-2">Verse</label>
+                <div className="relative">
+                  <select 
+                    value={selectedVerse} 
+                    onChange={(e) => setSelectedVerse(Number(e.target.value))}
+                    className="w-full appearance-none bg-neutral-50 border border-neutral-300 rounded-xl px-4 py-3 pr-10 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-shadow outline-none text-neutral-800 font-medium"
+                    disabled={verses.length === 0}
+                  >
+                    {verses.map(v => (
+                      <option key={v.verseNumber} value={v.verseNumber}>Verse {v.verseNumber}</option>
+                    ))}
+                  </select>
+                  <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-4 text-neutral-500">
+                    <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7"></path></svg>
+                  </div>
+                </div>
+              </div>
             </div>
-
+          </div>
+          
+          <div className="bg-indigo-50 p-6 rounded-2xl border border-indigo-100">
+            <h3 className="font-semibold text-indigo-900 mb-2">Tip</h3>
+            <p className="text-sm text-indigo-700 leading-relaxed">
+              Use the arrow buttons in the preview pane or select a specific verse from the dropdown. The projector window will update instantly.
+            </p>
           </div>
         </div>
 
-        {/* Navigation & Preview */}
-        <div className="p-8 bg-gray-100 flex flex-col items-center justify-center min-h-[300px] relative">
-          
-          {loading ? (
-            <p className="text-gray-500 animate-pulse">Loading chapter...</p>
-          ) : verses.length > 0 ? (
-            <div className="text-center w-full max-w-2xl flex flex-col items-center">
-              <p className="text-3xl font-semibold mb-4 text-gray-800">
-                {verses.find(v => v.verseNumber === selectedVerse)?.text}
-              </p>
-              <p className="text-xl text-gray-500 font-medium mb-8">
-                {activeBookInfo?.name} {selectedChapter}:{selectedVerse}
-              </p>
-
-              {/* Prev / Next Buttons */}
-              <div className="flex gap-6 w-full justify-center">
-                <button 
-                  onClick={handlePrevVerse}
-                  disabled={selectedVerse <= 1}
-                  className="bg-blue-600 disabled:bg-gray-300 text-white font-bold py-3 px-8 rounded-full shadow-md hover:bg-blue-700 hover:shadow-lg transition flex items-center gap-2"
-                >
-                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 19l-7-7 7-7"></path></svg>
-                  Previous Verse
-                </button>
-                <button 
-                  onClick={handleNextVerse}
-                  disabled={selectedVerse >= verses.length}
-                  className="bg-blue-600 disabled:bg-gray-300 text-white font-bold py-3 px-8 rounded-full shadow-md hover:bg-blue-700 hover:shadow-lg transition flex items-center gap-2"
-                >
-                  Next Verse
-                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5l7 7-7 7"></path></svg>
-                </button>
-              </div>
+        {/* Right Column: Live Preview & Navigation */}
+        <div className="lg:col-span-8 flex flex-col">
+          <div className="bg-white rounded-3xl shadow-sm border border-neutral-200/60 flex-1 flex flex-col overflow-hidden">
+            
+            {/* Display Header */}
+            <div className="bg-neutral-50 border-b border-neutral-200/60 px-6 py-4 flex items-center justify-between">
+              <span className="text-sm font-semibold text-neutral-500 tracking-wider uppercase">Live Preview</span>
+              <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-100 text-emerald-700 text-xs font-bold">
+                <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+                SYNC ACTIVE
+              </span>
             </div>
-          ) : (
-            <p className="text-gray-500">No verses available.</p>
-          )}
 
+            {/* Display Screen Mimic */}
+            <div className="flex-1 bg-[#0a0a0a] m-6 rounded-2xl relative flex flex-col items-center justify-center p-12 overflow-hidden shadow-inner">
+              {loading ? (
+                <div className="flex flex-col items-center gap-4 text-neutral-500">
+                  <div className="w-8 h-8 border-4 border-neutral-600 border-t-neutral-300 rounded-full animate-spin"></div>
+                  <p className="animate-pulse font-medium">Loading scripture...</p>
+                </div>
+              ) : verses.length > 0 ? (
+                <div className="w-full max-w-3xl flex flex-col items-center text-center">
+                  <p className="text-3xl md:text-4xl lg:text-5xl font-bold text-white leading-tight mb-8">
+                    {currentVerseText}
+                  </p>
+                  <p className="text-xl md:text-2xl text-neutral-400 font-medium">
+                    {activeBookInfo?.name} {selectedChapter}:{selectedVerse}
+                  </p>
+                </div>
+              ) : (
+                <p className="text-neutral-500 text-lg">No verses available in this chapter.</p>
+              )}
+            </div>
+
+            {/* Action Buttons */}
+            <div className="p-6 border-t border-neutral-100 flex items-center justify-center gap-4">
+              <button 
+                onClick={handlePrevVerse}
+                disabled={selectedVerse <= 1 || loading}
+                className="flex-1 max-w-[240px] flex items-center justify-center gap-2 bg-white border-2 border-neutral-200 text-neutral-700 disabled:opacity-50 disabled:cursor-not-allowed font-bold py-3.5 px-6 rounded-xl hover:border-indigo-600 hover:text-indigo-600 active:bg-indigo-50 transition-all"
+              >
+                <ChevronLeft size={20} />
+                Previous Verse
+              </button>
+              
+              <div className="w-12 h-12 flex items-center justify-center bg-indigo-50 rounded-full text-indigo-600 font-bold">
+                <Hash size={20} />
+              </div>
+
+              <button 
+                onClick={handleNextVerse}
+                disabled={selectedVerse >= verses.length || loading}
+                className="flex-1 max-w-[240px] flex items-center justify-center gap-2 bg-indigo-600 border-2 border-indigo-600 text-white disabled:opacity-50 disabled:cursor-not-allowed font-bold py-3.5 px-6 rounded-xl hover:bg-indigo-700 hover:border-indigo-700 active:scale-[0.98] transition-all shadow-md shadow-indigo-200"
+              >
+                Next Verse
+                <ChevronRight size={20} />
+              </button>
+            </div>
+            
+          </div>
         </div>
-      </div>
+        
+      </main>
     </div>
   );
 }
