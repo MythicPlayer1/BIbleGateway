@@ -202,9 +202,9 @@ export const LiveScreenMonitor: React.FC<LiveScreenMonitorProps> = ({
               <span className="text-[11px] font-bold text-neutral-400 uppercase tracking-wider">Speed:</span>
               <div className="flex items-center gap-1 bg-neutral-900/90 p-1 rounded-xl border border-neutral-800">
                 {[
-                  { id: 'fast', label: '⚡ Fast (0.2s)' },
-                  { id: 'normal', label: '✨ Normal (0.3s)' },
-                  { id: 'slow', label: '🐢 Smooth (0.7s)' }
+                  { id: 'fast', label: '⚡ Fast (0.25s)' },
+                  { id: 'normal', label: '✨ Cinematic (0.45s)' },
+                  { id: 'slow', label: '🐢 Gentle (0.75s)' }
                 ].map(sp => (
                   <button
                     key={sp.id}
@@ -234,7 +234,7 @@ export const LiveScreenMonitor: React.FC<LiveScreenMonitorProps> = ({
             <GlobalBackgroundLayer config={globalBgConfig} legacyBgUrl={localBgUrl} legacyBgType={localBgType} />
 
             {/* 2. Foreground Presentation Slides */}
-            <AnimatePresence mode="wait">
+            <AnimatePresence mode="popLayout" initial={false}>
               {loading && appMode === 'bible' ? (
                 <motion.div 
                   key="loading"
@@ -413,7 +413,8 @@ export const LiveScreenMonitor: React.FC<LiveScreenMonitorProps> = ({
                   initial={getTextAnimationVariants(textAnimConfig.effect).initial}
                   animate={getTextAnimationVariants(textAnimConfig.effect).animate}
                   exit={getTextAnimationVariants(textAnimConfig.effect).exit}
-                  transition={{ duration: getTextAnimationDuration(textAnimConfig.speed), ease: [0.25, 1, 0.5, 1] }}
+                  transition={{ duration: getTextAnimationDuration(textAnimConfig.speed), ease: [0.22, 1, 0.36, 1] }}
+                  style={{ willChange: 'transform, opacity', transform: 'translateZ(0)' }}
                   className="w-full max-w-[94%] flex flex-col items-center text-center relative z-20"
                 >
                   {currentPreviewText.includes('\n───\n') || currentPreviewText.includes('\n---\n') ? (() => {

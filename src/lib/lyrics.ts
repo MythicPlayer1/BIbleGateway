@@ -46,10 +46,10 @@ export const DEFAULT_TEXT_ANIMATION_CONFIG: TextAnimationConfig = {
 
 export function getTextAnimationDuration(speed: TextAnimationSpeed = 'normal'): number {
   switch (speed) {
-    case 'fast': return 0.18;
-    case 'slow': return 0.65;
+    case 'fast': return 0.25;
+    case 'slow': return 0.75;
     case 'normal':
-    default: return 0.32;
+    default: return 0.45;
   }
 }
 
@@ -57,15 +57,15 @@ export function getTextAnimationVariants(effect: TextAnimationEffect = 'slide-up
   switch (effect) {
     case 'fade':
       return {
-        initial: { opacity: 0 },
-        animate: { opacity: 1 },
-        exit: { opacity: 0 }
+        initial: { opacity: 0, scale: 0.97 },
+        animate: { opacity: 1, scale: 1 },
+        exit: { opacity: 0, scale: 1.03 }
       };
     case 'slide-down':
       return {
-        initial: { opacity: 0, y: -35 },
-        animate: { opacity: 1, y: 0 },
-        exit: { opacity: 0, y: 35 }
+        initial: { opacity: 0, y: -45, scale: 0.98 },
+        animate: { opacity: 1, y: 0, scale: 1 },
+        exit: { opacity: 0, y: 45, scale: 0.98 }
       };
     case 'zoom-in':
       return {
@@ -75,28 +75,28 @@ export function getTextAnimationVariants(effect: TextAnimationEffect = 'slide-up
       };
     case 'flip':
       return {
-        initial: { opacity: 0, rotateX: 65 },
-        animate: { opacity: 1, rotateX: 0 },
-        exit: { opacity: 0, rotateX: -65 }
+        initial: { opacity: 0, rotateX: 55, y: 25 },
+        animate: { opacity: 1, rotateX: 0, y: 0 },
+        exit: { opacity: 0, rotateX: -55, y: -25 }
       };
     case 'blur':
       return {
-        initial: { opacity: 0, filter: 'blur(16px)' },
-        animate: { opacity: 1, filter: 'blur(0px)' },
-        exit: { opacity: 0, filter: 'blur(16px)' }
+        initial: { opacity: 0, filter: 'blur(16px)', scale: 0.94 },
+        animate: { opacity: 1, filter: 'blur(0px)', scale: 1 },
+        exit: { opacity: 0, filter: 'blur(16px)', scale: 1.06 }
       };
     case 'pop':
       return {
-        initial: { opacity: 0, scale: 0.6 },
+        initial: { opacity: 0, scale: 0.65 },
         animate: { opacity: 1, scale: 1 },
-        exit: { opacity: 0, scale: 0.6 }
+        exit: { opacity: 0, scale: 0.75 }
       };
     case 'slide-up':
     default:
       return {
-        initial: { opacity: 0, y: 35 },
-        animate: { opacity: 1, y: 0 },
-        exit: { opacity: 0, y: -35 }
+        initial: { opacity: 0, y: 45, scale: 0.98 },
+        animate: { opacity: 1, y: 0, scale: 1 },
+        exit: { opacity: 0, y: -45, scale: 0.98 }
       };
   }
 }

@@ -5,14 +5,14 @@ import { motion, AnimatePresence } from "framer-motion";
 import { getGlobalBackground, getScheduleMedia } from "@/lib/mediaStorage";
 import { GlobalBackgroundLayer } from "@/components/GlobalBackgroundLayer";
 import { QrCode, ZoomIn, ZoomOut, RotateCcw } from "lucide-react";
-import type { 
-  SlideLayout, TextAlign, AccentColor, CustomSlideTheme, 
+import type {
+  SlideLayout, TextAlign, AccentColor, CustomSlideTheme,
   TickerConfig, TickerTheme, TickerPosition, TickerSpeed, TickerFontSize,
   GlobalBackgroundConfig, TextAnimationConfig
 } from "@/lib/lyrics";
-import { 
-  DEFAULT_TICKER_CONFIG, BROADCAST_CHANNEL_NAME, 
-  DEFAULT_TEXT_ANIMATION_CONFIG, getTextAnimationVariants, getTextAnimationDuration 
+import {
+  DEFAULT_TICKER_CONFIG, BROADCAST_CHANNEL_NAME,
+  DEFAULT_TEXT_ANIMATION_CONFIG, getTextAnimationVariants, getTextAnimationDuration
 } from "@/lib/lyrics";
 
 // Responsive pure-CSS viewport typography scaling
@@ -171,7 +171,7 @@ export default function Projector() {
 
   useEffect(() => {
     const channel = new BroadcastChannel(BROADCAST_CHANNEL_NAME);
-    
+
     channel.onmessage = (event) => {
       if (event.data.type === 'SET_VERSE') {
         if (mediaSlideUrlRef.current) {
@@ -203,7 +203,7 @@ export default function Projector() {
       else if (event.data.type === 'SET_MEDIA_SLIDE') {
         const incomingTitle = event.data.title || '';
         const incomingType = event.data.fileType || 'image';
-        
+
         // If already showing the exact same media, skip recreation to avoid flicker
         if (mediaSlide && mediaSlide.title === incomingTitle && mediaSlide.fileType === incomingType && mediaSlide.url) {
           return;
@@ -349,7 +349,7 @@ export default function Projector() {
         setBgUrl(newUrl);
         setBgType(bg.fileType);
       }
-    }).catch(() => {});
+    }).catch(() => { });
 
     // Dual-Layer Storage Auto-Restore
     const restoreBgConfigFromStorage = async () => {
@@ -387,7 +387,7 @@ export default function Projector() {
           }
           setBgConfig(parsedBgConfig);
         }
-      } catch (e) {}
+      } catch (e) { }
     };
 
     restoreBgConfigFromStorage();
@@ -440,14 +440,14 @@ export default function Projector() {
           if (data.isTextHidden !== undefined) setIsTextHidden(data.isTextHidden);
           if (data.ticker) setTicker(data.ticker);
         }
-      } catch (e) {}
+      } catch (e) { }
 
       try {
         const savedAnim = localStorage.getItem('worship_text_anim_config');
         if (savedAnim) {
           setTextAnim(JSON.parse(savedAnim));
         }
-      } catch (e) {}
+      } catch (e) { }
     };
 
     restoreFromStorage();
@@ -500,7 +500,7 @@ export default function Projector() {
   // Ensure background video plays
   useEffect(() => {
     if (bgType === 'video' && videoRef.current) {
-      videoRef.current.play().catch(() => {});
+      videoRef.current.play().catch(() => { });
     }
   }, [bgUrl, bgType]);
 
@@ -508,7 +508,7 @@ export default function Projector() {
   useEffect(() => {
     if (mediaSlide?.fileType === 'video' && mediaSlideVideoRef.current) {
       if (isVideoPlaying) {
-        mediaSlideVideoRef.current.play().catch(() => {});
+        mediaSlideVideoRef.current.play().catch(() => { });
       } else {
         mediaSlideVideoRef.current.pause();
       }
@@ -519,7 +519,7 @@ export default function Projector() {
   useEffect(() => {
     if (!mediaSlideVideoRef.current) return;
     if (isVideoPlaying) {
-      mediaSlideVideoRef.current.play().catch(() => {});
+      mediaSlideVideoRef.current.play().catch(() => { });
     } else {
       mediaSlideVideoRef.current.pause();
     }
@@ -535,9 +535,9 @@ export default function Projector() {
   // Toggle native borderless fullscreen
   const toggleFullscreen = () => {
     if (!document.fullscreenElement) {
-      document.documentElement.requestFullscreen().catch(() => {});
+      document.documentElement.requestFullscreen().catch(() => { });
     } else {
-      document.exitFullscreen().catch(() => {});
+      document.exitFullscreen().catch(() => { });
     }
   };
 
@@ -591,7 +591,7 @@ export default function Projector() {
   };
 
   return (
-    <div 
+    <div
       onDoubleClick={toggleFullscreen}
       className="w-screen h-screen min-h-screen bg-[#030303] text-white flex flex-col items-center justify-center p-0 relative overflow-hidden select-none font-sans"
     >
@@ -602,7 +602,7 @@ export default function Projector() {
       <AnimatePresence mode="wait">
         {/* A. Foreground Media Presentation Slide (Video / Photo with Smooth Crossfade & Pan-Zoom) */}
         {!isTextHidden && mediaSlide && (
-          <motion.div 
+          <motion.div
             key={`media-${mediaSlide.title || mediaSlide.url}`}
             initial={{ opacity: 0, scale: 0.98 }}
             animate={{ opacity: 1, scale: 1 }}
@@ -614,31 +614,30 @@ export default function Projector() {
             onMouseUp={handleMouseUp}
             onMouseLeave={handleMouseUp}
             onDoubleClick={handleDoubleClick}
-            className={`absolute inset-0 z-20 w-full h-full p-0 m-0 bg-black flex items-center justify-center overflow-hidden select-none ${
-              zoom > 1 ? (isDragging ? 'cursor-grabbing' : 'cursor-grab') : 'cursor-default'
-            }`}
+            className={`absolute inset-0 z-20 w-full h-full p-0 m-0 bg-black flex items-center justify-center overflow-hidden select-none ${zoom > 1 ? (isDragging ? 'cursor-grabbing' : 'cursor-grab') : 'cursor-default'
+              }`}
           >
             {mediaSlide.fileType === 'video' ? (
-              <video 
+              <video
                 ref={mediaSlideVideoRef}
-                src={mediaSlide.url} 
-                autoPlay={isVideoPlaying} 
-                loop 
+                src={mediaSlide.url}
+                autoPlay={isVideoPlaying}
+                loop
                 muted={isVideoMuted}
                 playsInline
                 className="w-full h-full object-cover"
               />
             ) : (
-              <div 
+              <div
                 className="w-full h-full flex items-center justify-center transition-transform duration-150 ease-out will-change-transform"
                 style={{
                   transform: `translate3d(${pan.x}px, ${pan.y}px, 0) scale(${zoom})`,
                   transformOrigin: 'center center'
                 }}
               >
-                <img 
-                  src={mediaSlide.url} 
-                  alt={mediaSlide.title} 
+                <img
+                  src={mediaSlide.url}
+                  alt={mediaSlide.title}
                   className="w-full h-full object-contain"
                   style={{
                     imageRendering: 'auto',
@@ -651,10 +650,9 @@ export default function Projector() {
 
             {/* Subtle Zoom & Pan Controller Overlay on Projector */}
             {mediaSlide.fileType === 'image' && (
-              <div 
-                className={`absolute bottom-6 right-6 z-40 flex items-center gap-1.5 p-1.5 bg-neutral-950/80 backdrop-blur-md rounded-2xl border border-white/20 shadow-2xl transition-opacity duration-300 ${
-                  showZoomControls || zoom > 1 ? 'opacity-100' : 'opacity-0 hover:opacity-100'
-                }`}
+              <div
+                className={`absolute bottom-6 right-6 z-40 flex items-center gap-1.5 p-1.5 bg-neutral-950/80 backdrop-blur-md rounded-2xl border border-white/20 shadow-2xl transition-opacity duration-300 ${showZoomControls || zoom > 1 ? 'opacity-100' : 'opacity-0 hover:opacity-100'
+                  }`}
                 onMouseDown={(e) => e.stopPropagation()}
               >
                 <button
@@ -710,8 +708,8 @@ export default function Projector() {
                 <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse"></span>
                 <span>
                   {verse.qrBadgeLabel || (
-                    verse.title?.toLowerCase().includes('tithe') || verse.title?.includes('दशांश') 
-                      ? 'दशांश तथा भेटी (Tithes & Offering)' 
+                    verse.title?.toLowerCase().includes('tithe') || verse.title?.includes('दशांश')
+                      ? 'दशांश तथा भेटी (Tithes & Offering)'
                       : (verse.subtitle || 'स्क्यान गर्नुहोस् (SCAN QR CODE)')
                   )}
                 </span>
@@ -776,15 +774,14 @@ export default function Projector() {
 
             {/* Giant Digital Clock */}
             <div className="relative">
-              <span 
-                className={`font-black font-mono tracking-wider transition-colors drop-shadow-2xl ${
-                  countdownLeft <= 10 && countdownLeft > 0 
-                    ? 'text-amber-400 animate-pulse' 
-                    : countdownLeft === 0 
-                      ? 'text-emerald-400' 
+              <span
+                className={`font-black font-mono tracking-wider transition-colors drop-shadow-2xl ${countdownLeft <= 10 && countdownLeft > 0
+                    ? 'text-amber-400 animate-pulse'
+                    : countdownLeft === 0
+                      ? 'text-emerald-400'
                       : 'text-white'
-                }`}
-                style={{ 
+                  }`}
+                style={{
                   fontSize: 'clamp(64px, 14vw, 200px)',
                   textShadow: '0px 8px 40px rgba(0,0,0,1), 0px 0px 30px rgba(99,102,241,0.6)'
                 }}
@@ -794,11 +791,11 @@ export default function Projector() {
             </div>
 
             {verse.text && (
-              <p 
+              <p
                 className="text-white font-medium max-w-2xl whitespace-pre-line leading-relaxed"
-                style={{ 
+                style={{
                   fontSize: 'clamp(16px, 2.2vw, 32px)',
-                  textShadow: '0px 4px 20px rgba(0,0,0,1)' 
+                  textShadow: '0px 4px 20px rgba(0,0,0,1)'
                 }}
               >
                 {verse.text}
@@ -817,7 +814,7 @@ export default function Projector() {
             transition={{ duration: 0.25, ease: "easeOut" }}
             className="absolute bottom-8 left-8 right-8 z-20 max-w-[92vw] mx-auto bg-black/85 backdrop-blur-md border border-white/15 rounded-3xl p-6 md:p-8 shadow-2xl flex flex-col items-center justify-center text-center"
           >
-            <p 
+            <p
               className="font-bold text-white leading-snug whitespace-pre-line mb-2"
               style={{ fontSize: 'clamp(20px, 2.8vw, 44px)' }}
             >
@@ -837,19 +834,19 @@ export default function Projector() {
 
         {/* E. Standard Full-Screen Slide (Scripture / Lyrics / Custom Slide) */}
         {!isTextHidden && !mediaSlide && (!verse.layout || verse.layout === 'standard') && (verse.text || verse.title) && (
-          <motion.div 
+          <motion.div
             key={`${verse.reference}-${verse.text || verse.title}`}
             initial={getTextAnimationVariants(textAnim.effect).initial}
             animate={getTextAnimationVariants(textAnim.effect).animate}
             exit={getTextAnimationVariants(textAnim.effect).exit}
-            transition={{ duration: getTextAnimationDuration(textAnim.speed), ease: [0.25, 1, 0.5, 1] }}
-            className={`w-full max-w-[94vw] mx-auto flex flex-col justify-center relative z-10 ${
-              verse.textAlign === 'left' 
-                ? 'items-start text-left' 
-                : verse.textAlign === 'right' 
-                  ? 'items-end text-right' 
+            transition={{ duration: getTextAnimationDuration(textAnim.speed), ease: [0.22, 1, 0.36, 1] }}
+            style={{ willChange: 'transform, opacity', transform: 'translateZ(0)' }}
+            className={`w-full max-w-[94vw] mx-auto flex flex-col justify-center relative z-10 ${verse.textAlign === 'left'
+                ? 'items-start text-left'
+                : verse.textAlign === 'right'
+                  ? 'items-end text-right'
                   : 'items-center text-center'
-            }`}
+              }`}
           >
             {String(verse.text || verse.title || '').includes('\n───\n') || String(verse.text || verse.title || '').includes('\n---\n') ? (() => {
               const fullContent = String(verse.text || verse.title || '');
@@ -858,14 +855,13 @@ export default function Projector() {
               const bottom = parts[1] || '';
               return (
                 <div className="w-full flex flex-col items-center justify-center gap-3 md:gap-5 mb-4 md:mb-6">
-                  <p 
-                    className={`font-black leading-[1.20] tracking-tight text-white w-full whitespace-pre-line ${
-                      verse.textAlign === 'left' ? 'text-left' : verse.textAlign === 'right' ? 'text-right' : 'text-center'
-                    }`}
-                    style={{ 
+                  <p
+                    className={`font-black leading-[1.20] tracking-tight text-white w-full whitespace-pre-line ${verse.textAlign === 'left' ? 'text-left' : verse.textAlign === 'right' ? 'text-right' : 'text-center'
+                      }`}
+                    style={{
                       fontSize: getResponsiveFontSize(top),
                       textShadow: '0px 4px 32px rgba(0,0,0,1), 0px 0px 14px rgba(0,0,0,0.95)'
-                    }} 
+                    }}
                   >
                     {top}
                   </p>
@@ -876,46 +872,44 @@ export default function Projector() {
                     <div className="h-[2px] flex-1 max-w-[200px] bg-gradient-to-r from-transparent via-indigo-400 to-transparent"></div>
                   </div>
 
-                  <p 
-                    className={`font-semibold italic leading-[1.24] tracking-normal text-neutral-100/95 w-full whitespace-pre-line ${
-                      verse.textAlign === 'left' ? 'text-left' : verse.textAlign === 'right' ? 'text-right' : 'text-center'
-                    }`}
-                    style={{ 
+                  <p
+                    className={`font-semibold italic leading-[1.24] tracking-normal text-neutral-100/95 w-full whitespace-pre-line ${verse.textAlign === 'left' ? 'text-left' : verse.textAlign === 'right' ? 'text-right' : 'text-center'
+                      }`}
+                    style={{
                       fontSize: getResponsiveFontSize(bottom),
                       textShadow: '0px 4px 28px rgba(0,0,0,1), 0px 0px 12px rgba(0,0,0,0.9)'
-                    }} 
+                    }}
                   >
                     {bottom}
                   </p>
                 </div>
               );
             })() : (
-              <p 
-                className={`font-black leading-[1.20] tracking-tight mb-4 md:mb-6 text-white w-full whitespace-pre-line ${
-                  verse.textAlign === 'left' ? 'text-left' : verse.textAlign === 'right' ? 'text-right' : 'text-center'
-                }`}
-                style={{ 
+              <p
+                className={`font-black leading-[1.20] tracking-tight mb-4 md:mb-6 text-white w-full whitespace-pre-line ${verse.textAlign === 'left' ? 'text-left' : verse.textAlign === 'right' ? 'text-right' : 'text-center'
+                  }`}
+                style={{
                   fontSize: fontSizeCss,
                   textShadow: '0px 4px 32px rgba(0,0,0,1), 0px 0px 14px rgba(0,0,0,0.95)'
-                }} 
+                }}
               >
                 {verse.text || verse.title}
               </p>
             )}
-            
+
             {verse.reference && (
-              <motion.div 
+              <motion.div
                 initial={{ opacity: 0, y: 4 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ duration: 0.2, delay: 0.04 }}
                 className="inline-flex items-center gap-3 md:gap-5 mt-1"
               >
                 <div className={`h-[3px] w-10 md:w-16 rounded-full shadow-[0_0_12px_rgba(0,0,0,0.9)] ${getAccentBg(verse.accentColor)}`}></div>
-                <p 
+                <p
                   className="text-white font-bold tracking-wide"
-                  style={{ 
+                  style={{
                     fontSize: 'clamp(18px, 2.2vw, 40px)',
-                    textShadow: '0px 2px 14px rgba(0,0,0,1)' 
+                    textShadow: '0px 2px 14px rgba(0,0,0,1)'
                   }}
                 >
                   {verse.reference}
@@ -991,10 +985,9 @@ export default function Projector() {
         const styles = getTickerThemeStyles(ticker.theme);
 
         return (
-          <div 
-            className={`absolute left-0 right-0 z-50 py-2.5 px-5 overflow-hidden shadow-2xl backdrop-blur-xl ${
-              ticker.position === 'top' ? 'top-0 border-b' : 'bottom-0 border-t'
-            } ${styles.container}`}
+          <div
+            className={`absolute left-0 right-0 z-50 py-2.5 px-5 overflow-hidden shadow-2xl backdrop-blur-xl ${ticker.position === 'top' ? 'top-0 border-b' : 'bottom-0 border-t'
+              } ${styles.container}`}
           >
             <div className="flex items-center gap-3.5">
               {ticker.showBadge && (
@@ -1003,7 +996,7 @@ export default function Projector() {
                 </span>
               )}
               <div className="overflow-hidden whitespace-nowrap flex-1">
-                <div 
+                <div
                   className={`inline-block animate-marquee font-bold tracking-wide ${styles.text}`}
                   style={{
                     animationDuration: getTickerDuration(ticker.speed),
