@@ -1,5 +1,13 @@
-export const books = [
-  { id: 0, name: "उत्पत्ति", englishName: "Genesis", chapters: 50 },
+export interface Book {
+  id: number;
+  name: string;
+  englishName: string;
+  chapters: number;
+  testament?: 'OT' | 'NT';
+}
+
+export const books: Book[] = [
+  { id: 0, name: "उत्पत्ति", englishName: "Genesis", chapters: 50, testament: 'OT' },
   { id: 1, name: "प्रस्थान", englishName: "Exodus", chapters: 40 },
   { id: 2, name: "लेवी", englishName: "Leviticus", chapters: 27 },
   { id: 3, name: "गन्ती", englishName: "Numbers", chapters: 36 },
