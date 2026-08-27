@@ -2,7 +2,7 @@
 
 import { create } from "zustand";
 import { 
-  defaultSongs, type Song, type ScheduleItem, type ScheduleItemType, 
+  defaultSongs, type Song, type ScheduleItem, type ScheduleItemType, type ServicePlan,
   type TickerConfig, DEFAULT_TICKER_CONFIG,
   type GlobalBackgroundConfig, DEFAULT_BACKGROUND_CONFIG,
   type TextAnimationConfig, DEFAULT_TEXT_ANIMATION_CONFIG,
@@ -11,9 +11,10 @@ import {
 import { nepaliToRoman } from "@/lib/transliterate";
 import rawSongsData from "@/data/nepali_christian_songs.json";
 import type { NewItemDataState } from "@/components/AddItemModal";
+import type { ConfirmModalConfig } from "@/components/ConfirmModal";
 
-export const initialSongsLibrary: Song[] = (rawSongsData as any[]).map((s: any) => ({
-  id: s.id || `song-${Math.random()}`,
+export const initialSongsLibrary: Song[] = (rawSongsData as any[]).map((s: any, idx: number) => ({
+  id: s.id || `song-${idx}`,
   title: s.title || '',
   title_en: s.title_en || nepaliToRoman(s.title || ''),
   artist: s.authors || s.artist || 'Worship Team',
@@ -21,7 +22,9 @@ export const initialSongsLibrary: Song[] = (rawSongsData as any[]).map((s: any) 
   details: s.details,
   letter: s.letter,
   rawLyrics: s.rawLyrics || s.lyrics || '',
-  rawLyrics_en: s.rawLyrics_en || nepaliToRoman(s.rawLyrics || s.lyrics || '')
+  rawLyrics_en: s.rawLyrics_en || nepaliToRoman(s.rawLyrics || s.lyrics || ''),
+  isDefault: true,
+  isCustom: false
 }));
 
 export interface WorshipStoreState {
@@ -80,13 +83,21 @@ export interface WorshipStoreState {
   setIsEditScheduleItemModalOpen: (open: boolean) => void;
   setEditingScheduleItem: (item: ScheduleItem | null) => void;
 
+  // Saved Service Plans
+  savedPlans: ServicePlan[];
+  isServicePlansModalOpen: boolean;
+  setSavedPlans: (plans: ServicePlan[] | ((prev: ServicePlan[]) => ServicePlan[])) => void;
+  setIsServicePlansModalOpen: (open: boolean) => void;
+
   // Display & Broadcast
   isTextHidden: boolean;
   isDisplayConnected: boolean;
   toastMessage: string | null;
+  confirmModalConfig: ConfirmModalConfig | null;
   setIsTextHidden: (hidden: boolean | ((prev: boolean) => boolean)) => void;
   setIsDisplayConnected: (connected: boolean) => void;
   setToastMessage: (msg: string | null) => void;
+  setConfirmModalConfig: (config: ConfirmModalConfig | null | ((prev: ConfirmModalConfig | null) => ConfirmModalConfig | null)) => void;
 
   // Background Studio
   bgFileName: string | null;
@@ -230,15 +241,27 @@ export const useWorshipStore = create<WorshipStoreState>((set) => ({
   setIsEditScheduleItemModalOpen: (open) => set({ isEditScheduleItemModalOpen: open }),
   setEditingScheduleItem: (item) => set({ editingScheduleItem: item }),
 
+  // Saved Service Plans
+  savedPlans: [],
+  isServicePlansModalOpen: false,
+  setSavedPlans: (updater) => set((state) => ({
+    savedPlans: typeof updater === 'function' ? updater(state.savedPlans) : updater
+  })),
+  setIsServicePlansModalOpen: (open) => set({ isServicePlansModalOpen: open }),
+
   // Display & Broadcast
   isTextHidden: false,
   isDisplayConnected: false,
   toastMessage: null,
+  confirmModalConfig: null,
   setIsTextHidden: (updater) => set((state) => ({
     isTextHidden: typeof updater === 'function' ? updater(state.isTextHidden) : updater
   })),
   setIsDisplayConnected: (connected) => set({ isDisplayConnected: connected }),
   setToastMessage: (msg) => set({ toastMessage: msg }),
+  setConfirmModalConfig: (updater) => set((state) => ({
+    confirmModalConfig: typeof updater === 'function' ? updater(state.confirmModalConfig) : updater
+  })),
 
   // Background Studio
   bgFileName: null,

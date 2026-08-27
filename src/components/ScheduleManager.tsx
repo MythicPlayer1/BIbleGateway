@@ -4,7 +4,7 @@ import React from "react";
 import { motion, Reorder } from "framer-motion";
 import { 
   Calendar, Music, Plus, CheckSquare, Square, 
-  Trash2, Layers, GripVertical, Image as ImageIcon, Upload, Sparkles, Edit3 
+  Trash2, Layers, GripVertical, Image as ImageIcon, Upload, Sparkles, Edit3, FolderKanban
 } from "lucide-react";
 import type { ScheduleItem, SongSlide, GlobalBackgroundConfig } from "@/lib/lyrics";
 import { ScheduleItemCard } from "./ScheduleItemCard";
@@ -19,6 +19,7 @@ interface ScheduleManagerProps {
   draggedSlideIdx: number | null;
   globalBgConfig?: GlobalBackgroundConfig;
   onOpenBgStudioModal?: () => void;
+  onOpenServicePlansModal?: () => void;
   onReorderSchedule: (items: ScheduleItem[]) => void;
   onSelectScheduleItem: (id: string) => void;
   onToggleSelectScheduleItem: (id: string, e: React.MouseEvent) => void;
@@ -50,6 +51,7 @@ export const ScheduleManager: React.FC<ScheduleManagerProps> = ({
   draggedSlideIdx,
   globalBgConfig,
   onOpenBgStudioModal,
+  onOpenServicePlansModal,
   onReorderSchedule,
   onSelectScheduleItem,
   onToggleSelectScheduleItem,
@@ -71,7 +73,7 @@ export const ScheduleManager: React.FC<ScheduleManagerProps> = ({
   onEditScheduleItem
 }) => {
   return (
-    <div className="space-y-6 flex flex-col">
+    <div className="space-y-6 flex-1 flex flex-col">
       {/* Schedule Items List Card */}
       <div className="bg-[#0e0e0e] p-6 rounded-3xl border border-neutral-800 shadow-xl space-y-4 flex-1 flex flex-col">
         <div className="flex items-center justify-between pb-3 border-b border-neutral-800">
@@ -84,6 +86,15 @@ export const ScheduleManager: React.FC<ScheduleManagerProps> = ({
           </div>
           
           <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={onOpenServicePlansModal}
+              className="flex items-center gap-1.5 bg-neutral-900 hover:bg-neutral-800 text-neutral-300 hover:text-white px-3 py-1.5 rounded-xl text-xs font-bold border border-neutral-700 shadow-sm active:scale-95 transition-all"
+              title="Save, load, and manage service plans and schedule templates"
+            >
+              <FolderKanban size={14} className="text-indigo-400" />
+              <span>Plans / Templates</span>
+            </button>
             <button
               onClick={onOpenNewSongModal}
               className="flex items-center gap-1.5 bg-neutral-900 hover:bg-neutral-800 text-neutral-300 hover:text-white px-3 py-1.5 rounded-xl text-xs font-bold border border-neutral-700 shadow-sm active:scale-95 transition-all"

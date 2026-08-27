@@ -9,6 +9,8 @@ export interface Song {
   language?: 'Nepali' | 'English';
   rawLyrics: string;
   rawLyrics_en?: string;
+  isDefault?: boolean;
+  isCustom?: boolean;
 }
 
 export type SlideLayout = 'standard' | 'lowerthird' | 'giving' | 'countdown';
@@ -340,6 +342,16 @@ export interface ScheduleItem {
   slideTemplate?: string;
   theme?: CustomSlideTheme;
   customSlides?: SongSlide[];
+}
+
+export interface ServicePlan {
+  id: string;
+  name: string;
+  description?: string;
+  serviceDate?: string;
+  items: ScheduleItem[];
+  createdAt: number;
+  updatedAt: number;
 }
 
 export const defaultSongs: Song[] = [

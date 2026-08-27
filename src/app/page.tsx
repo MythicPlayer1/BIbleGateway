@@ -14,6 +14,8 @@ import { AddItemModal } from "@/components/AddItemModal";
 import { SongModal } from "@/components/SongModal";
 import { BackgroundStudioModal } from "@/components/BackgroundStudioModal";
 import { EditScheduleItemModal } from "@/components/EditScheduleItemModal";
+import { ServicePlansModal } from "@/components/ServicePlansModal";
+import { ConfirmModal } from "@/components/ConfirmModal";
 
 export default function Home() {
   const state = useWorshipState();
@@ -50,6 +52,7 @@ export default function Home() {
               draggedSlideIdx={state.draggedSlideIdx}
               globalBgConfig={state.globalBgConfig}
               onOpenBgStudioModal={() => state.setIsBgStudioModalOpen(true)}
+              onOpenServicePlansModal={() => state.setIsServicePlansModalOpen(true)}
               onReorderSchedule={(items) => state.updateScheduleAndPersist(items)}
               onSelectScheduleItem={(id) => {
                 state.setSelectedItemId(id);
@@ -219,6 +222,19 @@ export default function Home() {
         onSave={state.handleSaveScheduleItem}
       />
 
+      <ServicePlansModal
+        isOpen={state.isServicePlansModalOpen}
+        onClose={state.handleCloseServicePlansModal}
+        savedPlans={state.savedPlans}
+        currentScheduleItems={state.scheduleItems}
+        onSaveCurrentPlan={state.handleSaveCurrentServicePlan}
+        onLoadPlan={state.handleLoadServicePlan}
+        onDuplicatePlan={state.handleDuplicateServicePlan}
+        onDeletePlan={state.handleDeleteServicePlan}
+        onExportPlan={state.handleExportServicePlan}
+        onImportPlan={state.handleImportServicePlan}
+      />
+
       <TickerStudioModal
         isOpen={state.isTickerModalOpen}
         onClose={() => state.setIsTickerModalOpen(false)}
@@ -232,6 +248,11 @@ export default function Home() {
         onUpdateTickerFontSize={state.handleUpdateTickerFontSize}
         onApplyTickerPreset={state.handleApplyTickerPreset}
         onToggleTicker={state.handleToggleTicker}
+      />
+
+      <ConfirmModal
+        config={state.confirmModalConfig}
+        onClose={state.closeConfirmModal}
       />
 
       <Toast message={state.toastMessage} />

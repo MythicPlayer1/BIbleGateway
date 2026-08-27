@@ -9,7 +9,8 @@ import {
   type SongSlide, type TickerConfig, type TickerTheme, 
   type TickerSpeed, type TickerFontSize, type MediaSlideItem,
   type GlobalBackgroundConfig, DEFAULT_BACKGROUND_CONFIG, type BackgroundImageItem,
-  type TextAnimationConfig, DEFAULT_TEXT_ANIMATION_CONFIG, type TextAnimationEffect, type TextAnimationSpeed
+  type TextAnimationConfig, DEFAULT_TEXT_ANIMATION_CONFIG, type TextAnimationEffect, type TextAnimationSpeed,
+  type ServicePlan
 } from "@/lib/lyrics";
 import { romanToDevanagariExactMatch, nepaliToRoman } from "@/lib/transliterate";
 import { 
@@ -49,6 +50,8 @@ export function useWorshipState() {
     selectedScheduleIds, setSelectedScheduleIds,
     isEditScheduleItemModalOpen, setIsEditScheduleItemModalOpen,
     editingScheduleItem, setEditingScheduleItem,
+    savedPlans, setSavedPlans,
+    isServicePlansModalOpen, setIsServicePlansModalOpen,
     isAddItemModalOpen, setIsAddItemModalOpen,
     addItemType, setAddItemType,
     modalSongSearch, setModalSongSearch,
@@ -65,6 +68,7 @@ export function useWorshipState() {
     countdownLeft, setCountdownLeft,
     isCountdownRunning, setIsCountdownRunning,
     toastMessage, setToastMessage,
+    confirmModalConfig, setConfirmModalConfig,
     isVideoPlaying, setIsVideoPlaying,
     isVideoMuted, setIsVideoMuted
   } = useWorshipStore();
@@ -173,9 +177,10 @@ export function useWorshipState() {
       if (savedCustom) {
         const parsed = JSON.parse(savedCustom);
         if (Array.isArray(parsed) && parsed.length > 0) {
-          const customIds = new Set(parsed.map((s: Song) => s.id));
-          const merged = [...parsed, ...initialSongsLibrary.filter(s => !customIds.has(s.id))];
-          setCustomSongs(merged);
+          const userOnly = parsed
+            .filter((s: Song) => s.id.startsWith('custom-song-') || s.isCustom)
+            .map((s: Song) => ({ ...s, isCustom: true, isDefault: false }));
+          setCustomSongs([...userOnly, ...initialSongsLibrary]);
           return;
         }
       }
@@ -326,6 +331,16 @@ export function useWorshipState() {
             const savedSlideIdx = localStorage.getItem('worship_selected_slide_index');
             if (savedSlideIdx !== null) {
               setSelectedSlideIndex(parseInt(savedSlideIdx, 10) || 0);
+            }
+          } catch (e) {}
+        }
+
+        const savedPlansStr = localStorage.getItem('worship_saved_service_plans');
+        if (savedPlansStr) {
+          try {
+            const parsedPlans = JSON.parse(savedPlansStr);
+            if (Array.isArray(parsedPlans)) {
+              setSavedPlans(parsedPlans);
             }
           } catch (e) {}
         }
@@ -1159,56 +1174,87 @@ export function useWorshipState() {
     }
   };
 
+  // Confirmation Modal Helpers
+  const showConfirm = (config: Omit<import("@/components/ConfirmModal").ConfirmModalConfig, "isOpen">) => {
+    setConfirmModalConfig({
+      ...config,
+      isOpen: true
+    });
+  };
+
+  const closeConfirmModal = () => {
+    setConfirmModalConfig(null);
+  };
+
   const handleBulkDeleteSchedule = () => {
     if (selectedScheduleIds.length === 0) return;
-    const mediaIdsToDelete: string[] = [];
-    selectedScheduleIds.forEach(id => {
-      mediaIdsToDelete.push(id);
-      for (let i = 0; i < 20; i++) mediaIdsToDelete.push(`${id}_media_${i}`);
-    });
-    deleteMultipleScheduleMedia(mediaIdsToDelete);
-    const updated = scheduleItems.filter(i => !selectedScheduleIds.includes(i.id));
-    const wasActiveDeleted = selectedScheduleIds.includes(selectedItemId);
-    setSelectedScheduleIds([]);
-    if (wasActiveDeleted || updated.length === 0) {
-      const nextSelectedId = updated[0]?.id || "";
-      updateScheduleAndPersist(updated, nextSelectedId, 0);
-      if (channelRef.current) {
-        channelRef.current.postMessage({ type: 'CLEAR_MEDIA_SLIDE' });
-        channelRef.current.postMessage({
-          type: 'SET_VERSE',
-          text: '',
-          reference: '',
-          title: '',
-          subtitle: '',
-          layout: 'standard'
+    showConfirm({
+      title: "Delete Selected Items",
+      message: `Are you sure you want to remove ${selectedScheduleIds.length} selected item(s) from the service schedule?`,
+      confirmText: `Delete ${selectedScheduleIds.length} Item(s)`,
+      variant: "danger",
+      onConfirm: () => {
+        const mediaIdsToDelete: string[] = [];
+        selectedScheduleIds.forEach(id => {
+          mediaIdsToDelete.push(id);
+          for (let i = 0; i < 20; i++) mediaIdsToDelete.push(`${id}_media_${i}`);
         });
+        deleteMultipleScheduleMedia(mediaIdsToDelete);
+        const updated = scheduleItems.filter(i => !selectedScheduleIds.includes(i.id));
+        const wasActiveDeleted = selectedScheduleIds.includes(selectedItemId);
+        setSelectedScheduleIds([]);
+        if (wasActiveDeleted || updated.length === 0) {
+          const nextSelectedId = updated[0]?.id || "";
+          updateScheduleAndPersist(updated, nextSelectedId, 0);
+          if (channelRef.current) {
+            channelRef.current.postMessage({ type: 'CLEAR_MEDIA_SLIDE' });
+            channelRef.current.postMessage({
+              type: 'SET_VERSE',
+              text: '',
+              reference: '',
+              title: '',
+              subtitle: '',
+              layout: 'standard'
+            });
+          }
+        } else {
+          updateScheduleAndPersist(updated);
+        }
+        showToast(`Deleted ${selectedScheduleIds.length} items from schedule`);
       }
-    } else {
-      updateScheduleAndPersist(updated);
-    }
+    });
   };
 
   const handleClearAllSchedule = () => {
-    const allIds: string[] = [];
-    scheduleItems.forEach(item => {
-      allIds.push(item.id);
-      for (let i = 0; i < 20; i++) allIds.push(`${item.id}_media_${i}`);
+    if (scheduleItems.length === 0) return;
+    showConfirm({
+      title: "Clear Order of Service",
+      message: "Are you sure you want to clear all items from the current schedule?",
+      confirmText: "Clear Schedule",
+      variant: "danger",
+      onConfirm: () => {
+        const allIds: string[] = [];
+        scheduleItems.forEach(item => {
+          allIds.push(item.id);
+          for (let i = 0; i < 20; i++) allIds.push(`${item.id}_media_${i}`);
+        });
+        deleteMultipleScheduleMedia(allIds);
+        setSelectedScheduleIds([]);
+        updateScheduleAndPersist([], "", 0);
+        if (channelRef.current) {
+          channelRef.current.postMessage({ type: 'CLEAR_MEDIA_SLIDE' });
+          channelRef.current.postMessage({
+            type: 'SET_VERSE',
+            text: '',
+            reference: '',
+            title: '',
+            subtitle: '',
+            layout: 'standard'
+          });
+        }
+        showToast("Service schedule cleared");
+      }
     });
-    deleteMultipleScheduleMedia(allIds);
-    setSelectedScheduleIds([]);
-    updateScheduleAndPersist([], "", 0);
-    if (channelRef.current) {
-      channelRef.current.postMessage({ type: 'CLEAR_MEDIA_SLIDE' });
-      channelRef.current.postMessage({
-        type: 'SET_VERSE',
-        text: '',
-        reference: '',
-        title: '',
-        subtitle: '',
-        layout: 'standard'
-      });
-    }
   };
 
   const toggleSelectScheduleItem = (id: string, e: React.MouseEvent) => {
@@ -1532,26 +1578,178 @@ export function useWorshipState() {
     showToast(`Updated "${updatedItem.title}" in Schedule`);
   };
 
+  // Service Plans & Schedule Templates Handlers
+  const handleOpenServicePlansModal = () => {
+    setIsServicePlansModalOpen(true);
+  };
+
+  const handleCloseServicePlansModal = () => {
+    setIsServicePlansModalOpen(false);
+  };
+
+  const handleSaveCurrentServicePlan = (name: string, description?: string, serviceDate?: string) => {
+    if (!name.trim()) return;
+    const newPlan: ServicePlan = {
+      id: `plan-${Date.now()}`,
+      name: name.trim(),
+      description: description?.trim() || undefined,
+      serviceDate: serviceDate || undefined,
+      items: scheduleItems,
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+    };
+    const updated = [newPlan, ...savedPlans];
+    setSavedPlans(updated);
+    try {
+      localStorage.setItem('worship_saved_service_plans', JSON.stringify(updated));
+    } catch (e) {}
+    showToast(`Saved service plan "${name}"`);
+  };
+
+  const handleLoadServicePlan = (plan: ServicePlan, mode: "replace" | "append") => {
+    if (mode === "replace") {
+      updateScheduleAndPersist(plan.items, plan.items[0]?.id || "", 0);
+      showToast(`Loaded "${plan.name}" into schedule`);
+    } else {
+      const newItems = plan.items.map((item) => ({
+        ...item,
+        id: `item-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+      }));
+      const combined = [...scheduleItems, ...newItems];
+      updateScheduleAndPersist(combined, scheduleItems[0]?.id || newItems[0]?.id || "", 0);
+      showToast(`Appended ${newItems.length} items from "${plan.name}"`);
+    }
+    setIsServicePlansModalOpen(false);
+  };
+
+  const handleDuplicateServicePlan = (plan: ServicePlan) => {
+    const duplicated: ServicePlan = {
+      ...plan,
+      id: `plan-${Date.now()}`,
+      name: `${plan.name} (Copy)`,
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+    };
+    const updated = [duplicated, ...savedPlans];
+    setSavedPlans(updated);
+    try {
+      localStorage.setItem('worship_saved_service_plans', JSON.stringify(updated));
+    } catch (e) {}
+    showToast(`Duplicated "${plan.name}"`);
+  };
+
+  const handleDeleteServicePlan = (planId: string) => {
+    const plan = savedPlans.find((p) => p.id === planId);
+    if (!plan) return;
+    showConfirm({
+      title: "Delete Service Plan",
+      message: `Are you sure you want to delete "${plan.name}"? This action cannot be undone.`,
+      confirmText: "Delete Plan",
+      variant: "danger",
+      onConfirm: () => {
+        const updated = savedPlans.filter((p) => p.id !== planId);
+        setSavedPlans(updated);
+        try {
+          localStorage.setItem('worship_saved_service_plans', JSON.stringify(updated));
+        } catch (e) {}
+        showToast(`Deleted "${plan.name}"`);
+      }
+    });
+  };
+
+  const handleExportServicePlan = (plan: ServicePlan) => {
+    try {
+      const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(plan, null, 2));
+      const downloadAnchor = document.createElement("a");
+      const cleanName = plan.name.replace(/[^a-zA-Z0-9_-]/g, "_");
+      downloadAnchor.setAttribute("href", dataStr);
+      downloadAnchor.setAttribute("download", `${cleanName || "service"}_plan.json`);
+      document.body.appendChild(downloadAnchor);
+      downloadAnchor.click();
+      downloadAnchor.remove();
+      showToast(`Exported "${plan.name}" to JSON`);
+    } catch (e) {
+      console.error(e);
+      showToast("Failed to export plan");
+    }
+  };
+
+  const handleImportServicePlan = (file: File) => {
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      try {
+        const content = event.target?.result as string;
+        const parsed = JSON.parse(content);
+        let importedPlans: ServicePlan[] = [];
+
+        if (Array.isArray(parsed)) {
+          if (parsed.length > 0 && parsed[0].items) {
+            importedPlans = parsed;
+          } else {
+            importedPlans = [{
+              id: `plan-${Date.now()}`,
+              name: file.name.replace(/\.json$/i, "").replace(/[_-]/g, " "),
+              items: parsed,
+              createdAt: Date.now(),
+              updatedAt: Date.now()
+            }];
+          }
+        } else if (parsed && parsed.name && parsed.items) {
+          importedPlans = [{
+            ...parsed,
+            id: `plan-${Date.now()}`
+          }];
+        } else {
+          showToast("Invalid service plan JSON format");
+          return;
+        }
+
+        const updated = [...importedPlans, ...savedPlans];
+        setSavedPlans(updated);
+        try {
+          localStorage.setItem('worship_saved_service_plans', JSON.stringify(updated));
+        } catch (e) {}
+        showToast(`Imported ${importedPlans.length} service plan(s)`);
+      } catch (err) {
+        console.error("Failed to parse JSON file", err);
+        showToast("Error importing JSON file");
+      }
+    };
+    reader.readAsText(file);
+  };
+
   const handleDeleteSong = (songId: string, e?: React.MouseEvent) => {
     if (e) e.stopPropagation();
     const songToDelete = allSongs.find(s => s.id === songId);
     if (!songToDelete) return;
 
-    if (window.confirm(`Are you sure you want to delete "${songToDelete.title}"?`)) {
-      const updated = customSongs.filter(s => s.id !== songId);
-      setCustomSongs(updated);
-      try {
-        const userCustomOnly = updated.filter(s => s.id.startsWith('custom-song-'));
-        localStorage.setItem('worship_custom_songs', JSON.stringify(userCustomOnly));
-      } catch (err) {}
-
-      if (activeLibrarySongId === songId) {
-        const remaining = allSongs.filter(s => s.id !== songId);
-        if (remaining.length > 0) setActiveLibrarySongId(remaining[0].id);
-      }
-
-      showToast(`Deleted "${songToDelete.title}"`);
+    const isCustom = Boolean(songToDelete.isCustom || songToDelete.id.startsWith('custom-song-'));
+    if (!isCustom) {
+      showToast("Default system songs cannot be deleted from the library.");
+      return;
     }
+
+    showConfirm({
+      title: "Delete Custom Song",
+      message: `Are you sure you want to delete "${songToDelete.title}" from your custom library?`,
+      confirmText: "Delete Song",
+      variant: "danger",
+      onConfirm: () => {
+        const updated = customSongs.filter(s => s.id !== songId);
+        setCustomSongs(updated);
+        try {
+          const userCustomOnly = updated.filter(s => s.isCustom || s.id.startsWith('custom-song-'));
+          localStorage.setItem('worship_custom_songs', JSON.stringify(userCustomOnly));
+        } catch (err) {}
+
+        if (activeLibrarySongId === songId) {
+          const remaining = allSongs.filter(s => s.id !== songId);
+          if (remaining.length > 0) setActiveLibrarySongId(remaining[0].id);
+        }
+
+        showToast(`Deleted "${songToDelete.title}"`);
+      }
+    });
   };
 
   const handleSaveSong = (addToSchedule: boolean = true) => {
@@ -1566,7 +1764,9 @@ export function useWorshipState() {
         artist: songFormData.artist || 'Worship Team',
         rawLyrics: songFormData.rawLyrics!,
         title_en: nepaliToRoman(songFormData.title!),
-        rawLyrics_en: nepaliToRoman(songFormData.rawLyrics!)
+        rawLyrics_en: nepaliToRoman(songFormData.rawLyrics!),
+        isCustom: true,
+        isDefault: false
       };
       const existsInCustom = customSongs.some(s => s.id === editingSongId);
       if (existsInCustom) {
@@ -1577,11 +1777,13 @@ export function useWorshipState() {
     } else {
       targetSong = {
         id: `custom-song-${Date.now()}`,
-        title: songFormData.title,
+        title: songFormData.title!,
         artist: songFormData.artist || 'Custom Worship',
-        rawLyrics: songFormData.rawLyrics,
-        title_en: nepaliToRoman(songFormData.title),
-        rawLyrics_en: nepaliToRoman(songFormData.rawLyrics)
+        rawLyrics: songFormData.rawLyrics!,
+        title_en: nepaliToRoman(songFormData.title!),
+        rawLyrics_en: nepaliToRoman(songFormData.rawLyrics!),
+        isCustom: true,
+        isDefault: false
       };
       updatedSongs = [targetSong, ...customSongs];
       setActiveLibrarySongId(targetSong.id);
@@ -1591,7 +1793,7 @@ export function useWorshipState() {
     setIsSongModalOpen(false);
 
     try {
-      const userCustomOnly = updatedSongs.filter(s => s.id.startsWith('custom-song-'));
+      const userCustomOnly = updatedSongs.filter(s => s.isCustom || s.id.startsWith('custom-song-'));
       localStorage.setItem('worship_custom_songs', JSON.stringify(userCustomOnly));
     } catch (e) {}
 
@@ -1966,6 +2168,20 @@ export function useWorshipState() {
     editingScheduleItem,
     handleOpenEditScheduleItemModal,
     handleSaveScheduleItem,
+    savedPlans,
+    isServicePlansModalOpen,
+    setIsServicePlansModalOpen,
+    confirmModalConfig,
+    showConfirm,
+    closeConfirmModal,
+    handleOpenServicePlansModal,
+    handleCloseServicePlansModal,
+    handleSaveCurrentServicePlan,
+    handleLoadServicePlan,
+    handleDuplicateServicePlan,
+    handleDeleteServicePlan,
+    handleExportServicePlan,
+    handleImportServicePlan,
     handleAddItemToSchedule,
     handleAddScriptureToSchedule,
     handleAddSongToSchedule,

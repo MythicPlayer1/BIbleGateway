@@ -153,6 +153,15 @@ export const SongLibrary: React.FC<SongLibraryProps> = ({
               <div className="min-w-0 pr-2 flex-1">
                 <div className="flex items-center gap-2">
                   <p className="font-bold text-sm text-white truncate">{song.title}</p>
+                  {Boolean(song.isCustom || song.id.startsWith('custom-song-')) ? (
+                    <span className="px-1.5 py-0.2 bg-emerald-950/80 text-emerald-400 border border-emerald-500/40 rounded text-[9px] font-bold shrink-0">
+                      Custom
+                    </span>
+                  ) : (
+                    <span className="px-1.5 py-0.2 bg-neutral-800 text-neutral-400 border border-neutral-700/80 rounded text-[9px] font-mono shrink-0">
+                      System
+                    </span>
+                  )}
                 </div>
 
                 {/* English Romanized Transliteration */}
@@ -169,31 +178,37 @@ export const SongLibrary: React.FC<SongLibraryProps> = ({
               </div>
 
               <div className="flex items-center gap-1 shrink-0">
-                {onEditSong && (
-                  <button
-                    type="button"
-                    onClick={(e) => onEditSong(song, e)}
-                    className="p-1.5 bg-neutral-800/80 hover:bg-neutral-700 text-neutral-300 hover:text-white rounded-xl transition-all"
-                    title="Edit lyrics or song details"
-                  >
-                    <Edit3 size={13} />
-                  </button>
-                )}
-                {onDeleteSong && (
-                  <button
-                    type="button"
-                    onClick={(e) => onDeleteSong(song.id, e)}
-                    className="p-1.5 bg-neutral-800/80 hover:bg-red-600/80 text-neutral-400 hover:text-white rounded-xl transition-all"
-                    title="Delete song from library"
-                  >
-                    <Trash2 size={13} />
-                  </button>
-                )}
+                {/* Custom Songs can be edited and deleted in Song Library */}
+                {Boolean(song.isCustom || song.id.startsWith('custom-song-')) ? (
+                  <>
+                    {onEditSong && (
+                      <button
+                        type="button"
+                        onClick={(e) => onEditSong(song, e)}
+                        className="p-1.5 bg-neutral-800/80 hover:bg-neutral-700 text-neutral-300 hover:text-white rounded-xl transition-all"
+                        title="Edit custom song details"
+                      >
+                        <Edit3 size={13} />
+                      </button>
+                    )}
+                    {onDeleteSong && (
+                      <button
+                        type="button"
+                        onClick={(e) => onDeleteSong(song.id, e)}
+                        className="p-1.5 bg-neutral-800/80 hover:bg-red-600/80 text-neutral-400 hover:text-white rounded-xl transition-all"
+                        title="Delete custom song from library"
+                      >
+                        <Trash2 size={13} />
+                      </button>
+                    )}
+                  </>
+                ) : null}
+
                 <button
                   type="button"
                   onClick={(e) => onAddSongToSchedule(song, e)}
                   className="flex items-center gap-1 bg-neutral-800 hover:bg-indigo-600 text-neutral-300 hover:text-white px-2.5 py-1.5 rounded-xl text-[11px] font-bold transition-all shadow-sm"
-                  title="Add to today's schedule"
+                  title="Add to service schedule (can be edited/customized in schedule)"
                 >
                   <Plus size={13} />
                   <span>Schedule</span>
