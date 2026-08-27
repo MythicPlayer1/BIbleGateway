@@ -302,7 +302,17 @@ export const BIBLE_TRANSLATIONS: BibleTranslationOption[] = [
   }
 ];
 
-export type ScheduleItemType = 'song' | 'scripture' | 'media' | 'slide';
+export type ScheduleItemType = 'song' | 'scripture' | 'media' | 'slide' | 'presentation' | 'web_embed';
+
+export interface PresentationSlide {
+  id: string;
+  pageNumber: number;
+  imageUrl: string;
+  thumbnailUrl?: string;
+  title?: string;
+}
+
+export type WebEmbedType = 'google_slides' | 'powerpoint_online' | 'generic';
 
 export interface ScheduleItem {
   id: string;
@@ -322,6 +332,9 @@ export interface ScheduleItem {
   mediaBuffer?: ArrayBuffer;
   mediaMime?: string;
   mediaItems?: MediaSlideItem[];
+  presentationSlides?: PresentationSlide[];
+  embedUrl?: string;
+  embedType?: WebEmbedType;
   slideText?: string;
   slideSubtitle?: string;
   slideTemplate?: string;

@@ -4,7 +4,8 @@ import React, { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { 
   X, Save, Music, BookOpen, Type, Film, Image as ImageIcon, 
-  Layers, Sparkles, AlignLeft, AlignCenter, AlignRight, RefreshCw
+  Layers, Sparkles, AlignLeft, AlignCenter, AlignRight, RefreshCw,
+  Globe, Presentation
 } from "lucide-react";
 import { books } from "@/lib/books";
 import { 
@@ -30,6 +31,7 @@ export const EditScheduleItemModal: React.FC<EditScheduleItemModalProps> = ({
   const [title, setTitle] = useState("");
   const [subtitle, setSubtitle] = useState("");
   const [lyricsText, setLyricsText] = useState("");
+  const [embedUrl, setEmbedUrl] = useState("");
   
   // Scripture fields
   const [bookId, setBookId] = useState<number>(0);
@@ -72,6 +74,8 @@ export const EditScheduleItemModal: React.FC<EditScheduleItemModalProps> = ({
         setLayout(item.theme?.layout || 'standard');
         setTextAlign(item.theme?.textAlign || 'center');
         setAccentColor(item.theme?.accentColor || 'indigo');
+      } else if (item.type === 'web_embed') {
+        setEmbedUrl(item.embedUrl || "");
       }
     }
   }, [item, isOpen, allSongs]);
@@ -204,6 +208,11 @@ export const EditScheduleItemModal: React.FC<EditScheduleItemModalProps> = ({
         },
         customSlides: parsedSlides
       };
+    } else if (item.type === 'web_embed') {
+      updatedItem = {
+        ...updatedItem,
+        embedUrl: embedUrl.trim() || item.embedUrl
+      };
     }
 
     onSave(updatedItem);
@@ -234,11 +243,15 @@ export const EditScheduleItemModal: React.FC<EditScheduleItemModalProps> = ({
                 item.type === 'song' ? 'bg-indigo-600/20 text-indigo-400 border-indigo-500/30' :
                 item.type === 'scripture' ? 'bg-emerald-600/20 text-emerald-400 border-emerald-500/30' :
                 item.type === 'media' ? 'bg-violet-600/20 text-violet-400 border-violet-500/30' :
+                item.type === 'presentation' ? 'bg-indigo-600/20 text-indigo-400 border-indigo-500/30' :
+                item.type === 'web_embed' ? 'bg-cyan-600/20 text-cyan-400 border-cyan-500/30' :
                 'bg-amber-600/20 text-amber-400 border-amber-500/30'
               }`}>
                 {item.type === 'song' ? <Music size={18} /> :
                  item.type === 'scripture' ? <BookOpen size={18} /> :
-                 item.type === 'media' ? <Film size={18} /> : <Type size={18} />}
+                 item.type === 'media' ? <Film size={18} /> :
+                 item.type === 'presentation' ? <Presentation size={18} /> :
+                 item.type === 'web_embed' ? <Globe size={18} /> : <Type size={18} />}
               </div>
               <div>
                 <h3 className="font-bold text-base text-white">
@@ -249,6 +262,8 @@ export const EditScheduleItemModal: React.FC<EditScheduleItemModalProps> = ({
                   {item.type === 'scripture' && 'Edit Scripture passage and verse text'}
                   {item.type === 'slide' && 'Edit announcement text, layout and styles'}
                   {item.type === 'media' && 'Edit media title and captions'}
+                  {item.type === 'presentation' && 'Edit presentation title and slide details'}
+                  {item.type === 'web_embed' && 'Edit web presentation embed link'}
                 </p>
               </div>
             </div>
@@ -559,6 +574,66 @@ export const EditScheduleItemModal: React.FC<EditScheduleItemModalProps> = ({
                     </select>
                   </div>
                 </div>
+              </div>
+            )}
+
+            {/* Presentation Deck Info */}
+            {item.type === 'presentation' && item.presentationSlides && (
+              <div className="bg-neutral-950 p-4 rounded-2xl border border-neutral-800 space-y-3">
+                <div className="flex items-center justify-between text-xs font-bold text-neutral-300">
+                  <span className="flex items-center gap-1.5">
+                    <Presentation size={15} className="text-indigo-400" />
+                    Presentation Slides ({item.presentationSlides.length})
+                  </span>
+                  <span className="text-indigo-400 font-mono text-[11px]">100% Offline Vector Slides</span>
+                </div>
+                <div className="grid grid-cols-4 sm:grid-cols-6 gap-2 max-h-40 overflow-y-auto p-1">
+                  {item.presentationSlides.map((ps) => (
+                    <div key={ps.id} className="relative aspect-video rounded-lg overflow-hidden border border-neutral-800 bg-black">
+                      <img src={ps.thumbnailUrl || ps.imageUrl} alt={ps.title || `Slide ${ps.pageNumber}`} className="w-full h-full object-cover" />
+                      <span className="absolute bottom-1 right-1 px-1 py-0.2 bg-black/80 rounded text-[9px] font-mono text-white">
+                        {ps.pageNumber}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Web Embed Link Field */}
+            {item.type === 'web_embed' && (
+              <div className="bg-neutral-950 p-4 rounded-2xl border border-neutral-800 space-y-3">
+                <label className="block text-xs font-bold text-neutral-400 uppercase mb-1 flex items-center justify-between">
+                  <span>Interactive Presentation Embed URL</span>
+                  <span className="text-indigo-400 font-mono text-[11px]">Google Slides / PPT 365</span>
+                </label>
+                <input
+                  type="text"
+                  value={embedUrl}
+                  onChange={(e) => {
+                    let val = e.target.value.trim();
+                    if (val.includes("<iframe") && val.includes("src=")) {
+                      const match = val.match(/src=["']([^"']+)["']/i);
+                      if (match && match[1]) val = match[1];
+                    }
+                    val = val.replace(/&amp;/g, "&");
+                    if (val.includes("docs.google.com/presentation/d/e/")) {
+                      if (val.includes("/pubembed")) {
+                        val = val.replace("/pubembed", "/embed");
+                      } else if (val.includes("/pub")) {
+                        val = val.replace("/pub", "/embed");
+                      }
+                    }
+                    setEmbedUrl(val);
+                  }}
+                  placeholder="https://docs.google.com/presentation/d/.../embed"
+                  className="w-full bg-neutral-900 border border-neutral-700 rounded-xl px-3.5 py-2.5 text-xs md:text-sm text-white focus:ring-2 focus:ring-indigo-500 outline-none font-mono"
+                />
+                {embedUrl && (
+                  <div className="aspect-video w-full max-h-48 rounded-xl overflow-hidden border border-neutral-800">
+                    <iframe src={embedUrl} title="Embed preview" className="w-full h-full border-0" />
+                  </div>
+                )}
               </div>
             )}
           </div>

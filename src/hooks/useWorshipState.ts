@@ -485,6 +485,29 @@ export function useWorshipState() {
           mediaMime: activeScheduleItem.mediaMime
         }];
       }
+      if (activeScheduleItem.type === 'presentation') {
+        if (activeScheduleItem.customSlides && activeScheduleItem.customSlides.length > 0) {
+          return activeScheduleItem.customSlides;
+        }
+        if (activeScheduleItem.presentationSlides && activeScheduleItem.presentationSlides.length > 0) {
+          return activeScheduleItem.presentationSlides.map((ps) => ({
+            section: `Slide ${ps.pageNumber}`,
+            lines: [ps.title || `Slide ${ps.pageNumber}`],
+            text: '',
+            mediaUrl: ps.imageUrl,
+            mediaType: 'image' as const
+          }));
+        }
+      }
+      if (activeScheduleItem.type === 'web_embed') {
+        return [{
+          section: 'Live Web Embed',
+          lines: [activeScheduleItem.title],
+          text: '',
+          title: activeScheduleItem.title,
+          subtitle: activeScheduleItem.subtitle
+        }];
+      }
     } else if (appMode === 'lyrics') {
       if (activeLibrarySong) {
         return parseLyricsToSlides(activeLibrarySong.rawLyrics || (activeLibrarySong as any).lyrics || '');
@@ -774,6 +797,64 @@ export function useWorshipState() {
             }
           }).catch(() => {});
         }
+      } else if (activeScheduleItem?.type === 'presentation') {
+        const currentSlide = activeSlides[selectedSlideIndex] || activeSlides[0];
+        const imageUrl = currentSlide?.mediaUrl || activeScheduleItem.presentationSlides?.[selectedSlideIndex]?.imageUrl || '';
+        const title = activeScheduleItem.title;
+        const mediaPayload = {
+          url: imageUrl,
+          fileType: 'image' as const,
+          title: `${title} - ${currentSlide?.section || `Slide ${selectedSlideIndex + 1}`}`
+        };
+        currentMediaSlideRef.current = mediaPayload;
+        currentContentRef.current = null;
+        if (channelRef.current) {
+          channelRef.current.postMessage({
+            type: 'SET_MEDIA_SLIDE',
+            ...mediaPayload
+          });
+        }
+        try {
+          localStorage.setItem('worship_live_projector_state', JSON.stringify({
+            type: 'media',
+            url: imageUrl,
+            fileType: 'image',
+            title: mediaPayload.title,
+            isTextHidden: isTextHiddenRef.current,
+            ticker: tickerConfigRef.current
+          }));
+        } catch (e) {}
+      } else if (activeScheduleItem?.type === 'web_embed') {
+        currentMediaSlideRef.current = null;
+        if (channelRef.current) {
+          channelRef.current.postMessage({ type: 'CLEAR_MEDIA_SLIDE' });
+        }
+        const payload = {
+          text: '',
+          reference: '',
+          title: activeScheduleItem.title,
+          subtitle: activeScheduleItem.subtitle || 'Live Web Presentation',
+          layout: 'standard' as const,
+          textAlign: 'center' as const,
+          accentColor: 'indigo' as const,
+          webEmbedUrl: activeScheduleItem.embedUrl,
+          embedType: activeScheduleItem.embedType || 'generic'
+        };
+        currentContentRef.current = payload;
+        if (channelRef.current) {
+          channelRef.current.postMessage({
+            type: 'SET_VERSE',
+            ...payload
+          });
+        }
+        try {
+          localStorage.setItem('worship_live_projector_state', JSON.stringify({
+            type: 'verse',
+            ...payload,
+            isTextHidden: isTextHiddenRef.current,
+            ticker: tickerConfigRef.current
+          }));
+        } catch (e) {}
       } else if (activeSlides.length > 0) {
         currentMediaSlideRef.current = null;
         if (channelRef.current) {
@@ -1316,6 +1397,34 @@ export function useWorshipState() {
         mediaItems: processedMediaItems,
         customSlides: generatedSlides
       };
+    } else if (addItemType === 'presentation' && newItemData.presentationSlides && newItemData.presentationSlides.length > 0) {
+      const presId = `item-${Date.now()}`;
+      const generatedSlides: SongSlide[] = newItemData.presentationSlides.map((ps) => ({
+        section: `Slide ${ps.pageNumber}`,
+        lines: [ps.title || `Slide ${ps.pageNumber}`],
+        text: '',
+        mediaUrl: ps.imageUrl,
+        mediaType: 'image'
+      }));
+
+      newItem = {
+        id: presId,
+        title: newItemData.title.trim() || 'Presentation Deck',
+        subtitle: newItemData.subtitle.trim() || `${newItemData.presentationSlides.length} Presentation Slides`,
+        type: 'presentation',
+        presentationSlides: newItemData.presentationSlides,
+        customSlides: generatedSlides
+      };
+    } else if (addItemType === 'web_embed' && newItemData.embedUrl) {
+      const embedId = `item-${Date.now()}`;
+      newItem = {
+        id: embedId,
+        title: newItemData.title.trim() || 'Live Web Presentation',
+        subtitle: newItemData.subtitle.trim() || 'Interactive Presentation Embed',
+        type: 'web_embed',
+        embedUrl: newItemData.embedUrl,
+        embedType: newItemData.embedType || 'generic'
+      };
     }
 
     if (newItem) {
@@ -1345,7 +1454,11 @@ export function useWorshipState() {
         countdownLabel: 'Service Begins In',
         mediaType: 'image',
         mediaFile: null,
-        mediaFiles: []
+        mediaFiles: [],
+        presentationSlides: [],
+        pdfFile: null,
+        embedUrl: '',
+        embedType: 'generic'
       });
     }
   };
@@ -1674,9 +1787,21 @@ export function useWorshipState() {
   }, [allSongs, modalSongSearch]);
 
   // Live Screen Preview text calculations
-  const isScheduleMedia = appMode === 'schedule' && activeScheduleItem?.type === 'media';
+  const isScheduleMedia = appMode === 'schedule' && (
+    activeScheduleItem?.type === 'media' || 
+    activeScheduleItem?.type === 'presentation' ||
+    Boolean(activeSlides[selectedSlideIndex]?.mediaUrl)
+  );
   const currentActiveMedia: any = isScheduleMedia 
-    ? (activeScheduleItem?.mediaItems?.[selectedSlideIndex] || activeScheduleItem)
+    ? (
+        activeSlides[selectedSlideIndex]?.mediaUrl
+          ? {
+              url: activeSlides[selectedSlideIndex].mediaUrl,
+              type: activeSlides[selectedSlideIndex].mediaType || 'image',
+              name: activeSlides[selectedSlideIndex].lines?.[0] || activeScheduleItem?.title || 'Slide'
+            }
+          : (activeScheduleItem?.mediaItems?.[selectedSlideIndex] || activeScheduleItem)
+      )
     : null;
   const currentPreviewText = appMode === 'bible'
     ? verses.find(v => v.verseNumber === selectedVerse)?.text || ''

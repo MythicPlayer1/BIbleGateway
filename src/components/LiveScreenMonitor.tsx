@@ -5,7 +5,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { 
   MonitorPlay, Maximize2, Film, Image as ImageIcon, 
   Play, Pause, RotateCcw, QrCode, Sparkles, ChevronLeft, ChevronRight,
-  Volume2, VolumeX, Wand2, Sliders
+  Volume2, VolumeX, Wand2, Sliders, Globe, Presentation
 } from "lucide-react";
 import type { ScheduleItem, GlobalBackgroundConfig, TextAnimationConfig, TextAnimationEffect, TextAnimationSpeed } from "@/lib/lyrics";
 import { 
@@ -308,6 +308,31 @@ export const LiveScreenMonitor: React.FC<LiveScreenMonitorProps> = ({
                     </span>
                     <span className="px-2.5 py-0.5 bg-emerald-950/90 text-emerald-300 border border-emerald-500/50 rounded-full text-[10px] font-bold shadow-lg shrink-0">
                       FOREGROUND ON AIR
+                    </span>
+                  </div>
+                </motion.div>
+              ) : activeScheduleItem?.type === 'web_embed' && activeScheduleItem?.embedUrl ? (
+                <motion.div
+                  key={`web-embed-${activeScheduleItem.id}`}
+                  initial={{ opacity: 0, scale: 0.98 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  exit={{ opacity: 0, scale: 1.02 }}
+                  transition={{ duration: 0.28, ease: "easeOut" }}
+                  className="absolute inset-0 z-20 w-full h-full p-0 m-0 bg-black flex items-center justify-center overflow-hidden rounded-3xl"
+                >
+                  <iframe
+                    src={activeScheduleItem.embedUrl}
+                    title={activeScheduleItem.title || 'Live Web Presentation'}
+                    className="w-full h-full border-0"
+                    allowFullScreen
+                  />
+                  <div className="absolute bottom-3 left-3 right-3 flex items-center justify-between pointer-events-none z-30">
+                    <span className="px-3 py-1 bg-black/80 backdrop-blur-md rounded-full text-xs font-bold text-white border border-neutral-700/80 shadow-lg flex items-center gap-2 max-w-[70%] truncate pointer-events-auto">
+                      <Globe size={13} className="text-indigo-400 shrink-0" />
+                      <span className="truncate">{activeScheduleItem.title}</span>
+                    </span>
+                    <span className="px-2.5 py-0.5 bg-indigo-950/90 text-indigo-300 border border-indigo-500/50 rounded-full text-[10px] font-bold shadow-lg shrink-0">
+                      LIVE WEB EMBED
                     </span>
                   </div>
                 </motion.div>

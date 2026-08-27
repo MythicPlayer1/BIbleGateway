@@ -311,7 +311,11 @@ export const useWorshipStore = create<WorshipStoreState>((set) => ({
     countdownLabel: 'Service Begins In',
     mediaType: 'image',
     mediaFile: null,
-    mediaFiles: []
+    mediaFiles: [],
+    presentationSlides: [],
+    pdfFile: null,
+    embedUrl: '',
+    embedType: 'generic'
   },
   modalSongSearch: '',
   modalVerses: [],

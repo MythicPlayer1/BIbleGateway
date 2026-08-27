@@ -4,7 +4,8 @@ import React from "react";
 import { Reorder, useDragControls } from "framer-motion";
 import { 
   GripVertical, CheckSquare, Square, Trash2, Edit3,
-  Music, BookOpen, Film, Image as ImageIcon, Type 
+  Music, BookOpen, Film, Image as ImageIcon, Type,
+  Globe, Presentation 
 } from "lucide-react";
 import type { ScheduleItem } from "@/lib/lyrics";
 
@@ -79,11 +80,17 @@ export const ScheduleItemCard: React.FC<ScheduleItemCardProps> = ({
             ? 'bg-emerald-600/20 text-emerald-400 border border-emerald-500/30'
             : item.type === 'media'
             ? 'bg-violet-600/20 text-violet-400 border border-violet-500/30'
+            : item.type === 'presentation'
+            ? 'bg-indigo-600/20 text-indigo-400 border border-indigo-500/30'
+            : item.type === 'web_embed'
+            ? 'bg-cyan-600/20 text-cyan-400 border border-cyan-500/30'
             : 'bg-amber-600/20 text-amber-400 border border-amber-500/30'
         }`}>
           {item.type === 'song' ? <Music size={15} /> :
            item.type === 'scripture' ? <BookOpen size={15} /> :
            item.type === 'media' ? (item.mediaType === 'video' ? <Film size={15} /> : <ImageIcon size={15} />) :
+           item.type === 'presentation' ? <Presentation size={15} /> :
+           item.type === 'web_embed' ? <Globe size={15} /> :
            <Type size={15} />}
         </div>
 

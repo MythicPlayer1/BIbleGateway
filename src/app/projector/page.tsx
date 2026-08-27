@@ -53,6 +53,8 @@ export default function Projector() {
     countdownSeconds?: number;
     countdownLabel?: string;
     countdownRunning?: boolean;
+    webEmbedUrl?: string;
+    embedType?: string;
   }>({
     text: "",
     reference: "",
@@ -193,7 +195,9 @@ export default function Projector() {
           qrInstruction: event.data.qrInstruction,
           countdownSeconds: event.data.countdownSeconds,
           countdownLabel: event.data.countdownLabel,
-          countdownRunning: event.data.countdownRunning
+          countdownRunning: event.data.countdownRunning,
+          webEmbedUrl: event.data.webEmbedUrl,
+          embedType: event.data.embedType
         });
 
         if (event.data.layout === 'countdown' && typeof event.data.countdownSeconds === 'number' && !isTimerRunning) {
@@ -430,7 +434,9 @@ export default function Projector() {
               qrInstruction: data.qrInstruction,
               countdownSeconds: data.countdownSeconds,
               countdownLabel: data.countdownLabel,
-              countdownRunning: data.countdownRunning
+              countdownRunning: data.countdownRunning,
+              webEmbedUrl: data.webEmbedUrl,
+              embedType: data.embedType
             });
             if (data.countdownRunning !== undefined) setIsTimerRunning(data.countdownRunning);
             if (typeof data.countdownLeft === 'number' && !isTimerRunning) {
@@ -832,8 +838,28 @@ export default function Projector() {
           </motion.div>
         )}
 
-        {/* E. Standard Full-Screen Slide (Scripture / Lyrics / Custom Slide) */}
-        {!isTextHidden && !mediaSlide && (!verse.layout || verse.layout === 'standard') && (verse.text || verse.title) && (
+        {/* E. Live Interactive Web Embed (Google Slides / Microsoft 365) */}
+        {!isTextHidden && !mediaSlide && verse.webEmbedUrl && (
+          <motion.div
+            key={`embed-${verse.webEmbedUrl}`}
+            initial={{ opacity: 0, scale: 0.98 }}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={{ opacity: 0, scale: 1.02 }}
+            transition={{ duration: 0.35, ease: [0.22, 1, 0.36, 1] }}
+            className="absolute inset-0 z-20 w-full h-full p-0 m-0 bg-black flex items-center justify-center overflow-hidden"
+          >
+            <iframe
+              src={verse.webEmbedUrl}
+              title={verse.title || 'Live Web Presentation'}
+              className="w-full h-full border-0"
+              allow="autoplay; fullscreen"
+              allowFullScreen
+            />
+          </motion.div>
+        )}
+
+        {/* F. Standard Full-Screen Slide (Scripture / Lyrics / Custom Slide) */}
+        {!isTextHidden && !mediaSlide && !verse.webEmbedUrl && (!verse.layout || verse.layout === 'standard') && (verse.text || verse.title) && (
           <motion.div
             key={`${verse.reference}-${verse.text || verse.title}`}
             initial={getTextAnimationVariants(textAnim.effect).initial}
