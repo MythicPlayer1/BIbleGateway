@@ -1538,30 +1538,68 @@ export function useWorshipState() {
     }
   };
 
-  const handleAddScriptureToSchedule = () => {
-    const book = books.find(b => b.id === selectedBook);
-    if (!book) return;
-    const currentVerseData = verses.find(v => v.verseNumber === selectedVerse);
+  const handleAddScriptureToSchedule = (options?: {
+    startVerse?: number;
+    endVerse?: number;
+    versesData?: { verseNumber: number; text: string }[];
+  }) => {
+    const book = books.find(b => b.id === selectedBook) || books[0];
     const transList = selectedTranslations && selectedTranslations.length > 0
       ? selectedTranslations
       : [bibleTranslation || 'nepali'];
     const transBadge = transList.length === 1 && transList[0] === 'nepali'
       ? ''
       : ` (${transList.map(t => t.toUpperCase()).join(' + ')})`;
+
+    const startV = options?.startVerse || selectedVerse;
+    const endV = options?.endVerse && options.endVerse >= startV ? options.endVerse : startV;
+    const isRange = endV > startV;
+
+    if (isRange) {
+      const allVersesInRange = (options?.versesData || verses).filter(
+        v => v.verseNumber >= startV && v.verseNumber <= endV
+      );
+
+      const generatedSlides: SongSlide[] = allVersesInRange.map(v => ({
+        section: `Verse ${v.verseNumber}`,
+        lines: [v.text],
+        text: v.text
+      }));
+
+      const scriptureItem: ScheduleItem = {
+        id: `item-${Date.now()}`,
+        title: `${book.name} ${selectedChapter}:${startV}-${endV}${transBadge}`,
+        subtitle: `${book.englishName} Scripture Passage (${endV - startV + 1} Verses)${transBadge}`,
+        type: 'scripture',
+        bookId: selectedBook,
+        chapter: selectedChapter,
+        verse: startV,
+        translation: transList[0],
+        translations: transList,
+        scriptureText: allVersesInRange.map(v => `[${v.verseNumber}] ${v.text}`).join('\n\n'),
+        customSlides: generatedSlides
+      };
+
+      updateScheduleAndPersist([...scheduleItems, scriptureItem], scriptureItem.id, 0);
+      showToast(`Added ${book.name} ${selectedChapter}:${startV}–${endV}${transBadge} (${endV - startV + 1} Verses) to Schedule`);
+      return;
+    }
+
+    const currentVData = (options?.versesData || verses).find(v => v.verseNumber === startV) || verses.find(v => v.verseNumber === selectedVerse);
     const scriptureItem: ScheduleItem = {
       id: `item-${Date.now()}`,
-      title: `${book.name} ${selectedChapter}:${selectedVerse}${transBadge}`,
+      title: `${book.name} ${selectedChapter}:${startV}${transBadge}`,
       subtitle: `${book.englishName} Scripture Reading${transBadge}`,
       type: 'scripture',
       bookId: selectedBook,
       chapter: selectedChapter,
-      verse: selectedVerse,
+      verse: startV,
       translation: transList[0],
       translations: transList,
-      scriptureText: currentVerseData?.text || ''
+      scriptureText: currentVData?.text || ''
     };
     updateScheduleAndPersist([...scheduleItems, scriptureItem], scriptureItem.id, 0);
-    showToast(`Added ${book.name} ${selectedChapter}:${selectedVerse}${transBadge} to Schedule`);
+    showToast(`Added ${book.name} ${selectedChapter}:${startV}${transBadge} to Schedule`);
   };
 
   const handleAddSongToSchedule = (song: Song, e?: React.MouseEvent) => {

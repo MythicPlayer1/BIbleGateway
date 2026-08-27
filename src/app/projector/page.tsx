@@ -82,7 +82,7 @@ export default function Projector() {
       try {
         const saved = localStorage.getItem('worship_display_config');
         if (saved) return { ...DEFAULT_DISPLAY_CONFIG, ...JSON.parse(saved) };
-      } catch {}
+      } catch { }
     }
     return DEFAULT_DISPLAY_CONFIG;
   });
@@ -825,10 +825,10 @@ export default function Projector() {
             <div className="relative">
               <span
                 className={`font-black font-mono tracking-wider transition-colors drop-shadow-2xl ${countdownLeft <= 10 && countdownLeft > 0
-                    ? 'text-amber-400 animate-pulse'
-                    : countdownLeft === 0
-                      ? 'text-emerald-400'
-                      : 'text-white'
+                  ? 'text-amber-400 animate-pulse'
+                  : countdownLeft === 0
+                    ? 'text-emerald-400'
+                    : 'text-white'
                   }`}
                 style={{
                   fontSize: 'clamp(64px, 14vw, 200px)',
@@ -866,7 +866,7 @@ export default function Projector() {
           >
             <p
               className="font-bold leading-snug whitespace-pre-line mb-2"
-              style={{ 
+              style={{
                 fontSize: `clamp(20px, ${2.8 * displayConfig.fontSizeScale}vw, ${44 * displayConfig.fontSizeScale}px)`,
                 color: displayConfig.textColor,
                 textShadow: getTextShadowCss(displayConfig.textShadow),
@@ -878,7 +878,7 @@ export default function Projector() {
             {verse.reference && (
               <div className="inline-flex items-center gap-2 mt-1">
                 <span className={`h-1.5 w-6 rounded-full ${getAccentBg(verse.accentColor)}`}></span>
-                <span 
+                <span
                   className={`text-xs md:text-sm font-bold tracking-wider ${getAccentText(verse.accentColor)}`}
                   style={{ color: displayConfig.textColor }}
                 >
@@ -919,15 +919,14 @@ export default function Projector() {
             exit={getTextAnimationVariants(textAnim.effect).exit}
             transition={{ duration: getTextAnimationDuration(textAnim.speed), ease: [0.22, 1, 0.36, 1] }}
             style={{ willChange: 'transform, opacity', transform: 'translateZ(0)' }}
-            className={`w-full max-w-[94vw] mx-auto flex flex-col justify-center relative z-10 ${
-              (verse.textAlign || displayConfig.textAlign) === 'left'
+            className={`w-full max-w-[94vw] mx-auto flex flex-col justify-center relative z-10 ${(verse.textAlign || displayConfig.textAlign) === 'left'
                 ? 'items-start text-left'
                 : (verse.textAlign || displayConfig.textAlign) === 'right'
                   ? 'items-end text-right'
                   : 'items-center text-center'
               }`}
           >
-            <div 
+            <div
               ref={contentContainerRef}
               className="w-full flex flex-col items-center justify-center max-h-[85vh] overflow-hidden"
             >
@@ -948,9 +947,8 @@ export default function Projector() {
                   return (
                     <div className="w-full flex flex-col items-center justify-center gap-3 md:gap-5 mb-4 md:mb-6">
                       <p
-                        className={`font-black tracking-tight w-full whitespace-pre-line ${
-                          (verse.textAlign || displayConfig.textAlign) === 'left' ? 'text-left' : (verse.textAlign || displayConfig.textAlign) === 'right' ? 'text-right' : 'text-center'
-                        }`}
+                        className={`font-black tracking-tight w-full whitespace-pre-line ${(verse.textAlign || displayConfig.textAlign) === 'left' ? 'text-left' : (verse.textAlign || displayConfig.textAlign) === 'right' ? 'text-right' : 'text-center'
+                          }`}
                         style={{
                           fontSize: getResponsiveFontSize(top, displayConfig.fontSizeScale),
                           color: displayConfig.textColor,
@@ -968,9 +966,8 @@ export default function Projector() {
                       </div>
 
                       <p
-                        className={`font-semibold italic tracking-normal w-full whitespace-pre-line opacity-95 ${
-                          (verse.textAlign || displayConfig.textAlign) === 'left' ? 'text-left' : (verse.textAlign || displayConfig.textAlign) === 'right' ? 'text-right' : 'text-center'
-                        }`}
+                        className={`font-semibold italic tracking-normal w-full whitespace-pre-line opacity-95 ${(verse.textAlign || displayConfig.textAlign) === 'left' ? 'text-left' : (verse.textAlign || displayConfig.textAlign) === 'right' ? 'text-right' : 'text-center'
+                          }`}
                         style={{
                           fontSize: getResponsiveFontSize(bottom, displayConfig.fontSizeScale * 0.85),
                           color: displayConfig.textColor,
@@ -984,9 +981,8 @@ export default function Projector() {
                   );
                 })() : (
                   <p
-                    className={`font-black tracking-tight mb-4 md:mb-6 w-full whitespace-pre-line ${
-                      (verse.textAlign || displayConfig.textAlign) === 'left' ? 'text-left' : (verse.textAlign || displayConfig.textAlign) === 'right' ? 'text-right' : 'text-center'
-                    }`}
+                    className={`font-black tracking-tight mb-4 md:mb-6 w-full whitespace-pre-line ${(verse.textAlign || displayConfig.textAlign) === 'left' ? 'text-left' : (verse.textAlign || displayConfig.textAlign) === 'right' ? 'text-right' : 'text-center'
+                      }`}
                     style={{
                       fontSize: getResponsiveFontSize(verse.text || verse.title || '', displayConfig.fontSizeScale),
                       color: displayConfig.textColor,
