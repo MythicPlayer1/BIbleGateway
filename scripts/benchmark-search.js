@@ -139,18 +139,18 @@ function search(query, limit = 20) {
 const testCases = [
   { name: "1-Character Query", query: "m", minMatches: 5 },
   { name: "3-Character Query", query: "mer", minMatches: 5 },
-  { name: "Conversational Roman Query", query: "mero hridayale", minMatches: 1 },
-  { name: "Conversational Roman Query", query: "tapailai khojchha", minMatches: 1 },
+  { name: "Bhajan Number Query", query: "509", minMatches: 1 },
+  { name: "Bhajan Keyword & Number", query: "bhajan 509", minMatches: 1 },
+  { name: "Artist Name Query", query: "michael tamang", minMatches: 1 },
+  { name: "Artist Name Query", query: "adrian dewan", minMatches: 1 },
   { name: "High-Frequency Church Keyword", query: "dhanyabad", minMatches: 3 },
   { name: "Phonetic Spelling Variation", query: "dhanyawaad", minMatches: 3 },
   { name: "Typo Tolerant Search", query: "danyabad", minMatches: 3 },
-  { name: "Typo Tolerant Search", query: "kristiya", minMatches: 3 },
   { name: "Pure Devanagari Query", query: "येशू", minMatches: 5 },
-  { name: "Pure Devanagari Query", query: "धन्यवाद", minMatches: 5 },
+  { name: "Pure Devanagari Query", query: "धन्यवाद", minMatches: 3 },
   { name: "Pure Devanagari Query", query: "महिमा", minMatches: 3 },
-  { name: "Hymnal Code Search", query: "kb:140", minMatches: 1 },
-  { name: "Hymnal Number Search", query: "140", minMatches: 1 },
-  { name: "Song ID Search", query: "song1924", minMatches: 1 }
+  { name: "Modern Song Title", query: "hajarau lakhau", minMatches: 1 },
+  { name: "Modern Song Nepali", query: "अगाप्य प्रेम", minMatches: 1 }
 ];
 
 let totalTime = 0;

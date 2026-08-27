@@ -16,6 +16,7 @@ import { BackgroundStudioModal } from "@/components/BackgroundStudioModal";
 import { EditScheduleItemModal } from "@/components/EditScheduleItemModal";
 import { ServicePlansModal } from "@/components/ServicePlansModal";
 import { ConfirmModal } from "@/components/ConfirmModal";
+import { DisplaySettingsModal } from "@/components/DisplaySettingsModal";
 
 export default function Home() {
   const state = useWorshipState();
@@ -30,6 +31,8 @@ export default function Home() {
         tickerConfig={state.tickerConfig}
         onOpenTickerModal={() => state.setIsTickerModalOpen(true)}
         onOpenBgStudioModal={() => state.setIsBgStudioModalOpen(true)}
+        onOpenDisplayModal={() => state.setIsDisplayModalOpen(true)}
+        displayConfig={state.displayConfig}
         isTextHidden={state.isTextHidden}
         onToggleHideText={state.toggleHideText}
         isDisplayConnected={state.isDisplayConnected}
@@ -112,6 +115,11 @@ export default function Home() {
               setSongSearchQuery={state.setSongSearchQuery}
               selectedLetter={state.selectedLetter}
               setSelectedLetter={state.setSelectedLetter}
+              selectedCategory={state.selectedCategory}
+              setSelectedCategory={state.setSelectedCategory}
+              selectedArtist={state.selectedArtist}
+              setSelectedArtist={state.setSelectedArtist}
+              allArtists={state.allArtists}
               activeLibrarySongId={state.activeLibrarySongId}
               onSelectSong={(id) => {
                 state.setActiveLibrarySongId(id);
@@ -135,6 +143,8 @@ export default function Home() {
           globalBgConfig={state.globalBgConfig}
           textAnimConfig={state.textAnimConfig}
           onUpdateTextAnimConfig={state.handleUpdateTextAnimConfig}
+          displayConfig={state.displayConfig}
+          onOpenDisplaySettingsModal={() => state.setIsDisplayModalOpen(true)}
           localBgUrl={state.localBgUrl}
           localBgType={state.localBgType}
           loading={state.loading}
@@ -248,6 +258,13 @@ export default function Home() {
         onUpdateTickerFontSize={state.handleUpdateTickerFontSize}
         onApplyTickerPreset={state.handleApplyTickerPreset}
         onToggleTicker={state.handleToggleTicker}
+      />
+
+      <DisplaySettingsModal
+        isOpen={state.isDisplayModalOpen}
+        onClose={() => state.setIsDisplayModalOpen(false)}
+        displayConfig={state.displayConfig}
+        onUpdateDisplayConfig={state.handleUpdateDisplayConfig}
       />
 
       <ConfirmModal

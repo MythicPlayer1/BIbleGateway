@@ -10,6 +10,7 @@ import {
   type TickerSpeed, type TickerFontSize, type MediaSlideItem,
   type GlobalBackgroundConfig, DEFAULT_BACKGROUND_CONFIG, type BackgroundImageItem,
   type TextAnimationConfig, DEFAULT_TEXT_ANIMATION_CONFIG, type TextAnimationEffect, type TextAnimationSpeed,
+  type ProjectorDisplayConfig,
   type ServicePlan
 } from "@/lib/lyrics";
 import { romanToDevanagariExactMatch, nepaliToRoman } from "@/lib/transliterate";
@@ -44,6 +45,8 @@ export function useWorshipState() {
     editingSongId, setEditingSongId,
     songSearchQuery, setSongSearchQuery,
     selectedLetter, setSelectedLetter,
+    selectedCategory, setSelectedCategory,
+    selectedArtist, setSelectedArtist,
     activeLibrarySongId, setActiveLibrarySongId,
     scheduleItems, setScheduleItems,
     selectedItemId, setSelectedItemId,
@@ -71,7 +74,9 @@ export function useWorshipState() {
     toastMessage, setToastMessage,
     confirmModalConfig, setConfirmModalConfig,
     isVideoPlaying, setIsVideoPlaying,
-    isVideoMuted, setIsVideoMuted
+    isVideoMuted, setIsVideoMuted,
+    displayConfig, setDisplayConfig,
+    isDisplayModalOpen, setIsDisplayModalOpen
   } = useWorshipStore();
 
   // References
@@ -83,6 +88,7 @@ export function useWorshipState() {
   const tickerConfigRef = useRef(tickerConfig);
   const globalBgConfigRef = useRef(globalBgConfig);
   const textAnimConfigRef = useRef(textAnimConfig);
+  const displayConfigRef = useRef(displayConfig);
   const isDisplayConnectedRef = useRef(isDisplayConnected);
   const timerIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const toastTimeoutRef = useRef<NodeJS.Timeout | null>(null);
@@ -127,6 +133,10 @@ export function useWorshipState() {
           channelRef.current.postMessage({
             type: 'SET_TEXT_ANIMATION',
             config: textAnimConfigRef.current
+          });
+          channelRef.current.postMessage({
+            type: 'DISPLAY_CONFIG_SYNC',
+            config: displayConfigRef.current
           });
           if (globalBgConfigRef.current) {
             channelRef.current.postMessage({
@@ -960,6 +970,24 @@ export function useWorshipState() {
     activeLibrarySong,
     scheduleItems.length
   ]);
+
+  // Sync Display Config changes to ref and broadcast to projector
+  useEffect(() => {
+    displayConfigRef.current = displayConfig;
+  }, [displayConfig]);
+
+  const handleUpdateDisplayConfig = (config: ProjectorDisplayConfig) => {
+    setDisplayConfig(config);
+    if (channelRef.current) {
+      channelRef.current.postMessage({
+        type: 'DISPLAY_CONFIG_SYNC',
+        config
+      });
+    }
+    try {
+      localStorage.setItem('worship_display_config', JSON.stringify(config));
+    } catch {}
+  };
 
   // Navigation handlers
   const handlePrev = () => {
@@ -1945,15 +1973,29 @@ export function useWorshipState() {
     setNewItemData(prev => ({ ...prev, countdownSeconds: total }));
   };
 
-  // High-Speed Pre-Indexed Search Engine (Browses all 2,101 songs & all search results)
+  // Unique List of Artists for the Artist Filter
+  const allArtists = useMemo(() => {
+    const artistSet = new Set<string>();
+    allSongs.forEach((s) => {
+      if (s.artist && s.artist !== 'Bhajan' && s.artist !== 'Worship Team' && s.artist !== 'Unknown Artist') {
+        artistSet.add(s.artist);
+      }
+    });
+    return Array.from(artistSet).sort((a, b) => a.localeCompare(b));
+  }, [allSongs]);
+
+  // High-Speed Pre-Indexed Search Engine (Browses 1,562 songs with Category, Artist & Letter filters)
   const filteredSongs = useMemo(() => {
     return searchSongsFast(allSongs, songSearchQuery, {
-      selectedLetter
+      selectedLetter,
+      selectedCategory,
+      selectedArtist
     });
-  }, [allSongs, selectedLetter, songSearchQuery]);
+  }, [allSongs, selectedLetter, selectedCategory, selectedArtist, songSearchQuery]);
 
   const modalFilteredSongs = useMemo(() => {
     return searchSongsFast(allSongs, modalSongSearch, {
+      selectedCategory: 'all',
       limit: 50
     });
   }, [allSongs, modalSongSearch]);
@@ -2035,10 +2077,15 @@ export function useWorshipState() {
     totalChapters: books.find(b => b.id === selectedBook)?.chapters || 1,
     allSongs,
     filteredSongs,
+    allArtists,
     songSearchQuery,
     setSongSearchQuery,
     selectedLetter,
     setSelectedLetter,
+    selectedCategory,
+    setSelectedCategory,
+    selectedArtist,
+    setSelectedArtist,
     activeLibrarySongId,
     setActiveLibrarySongId,
     activeLibrarySong,
@@ -2156,6 +2203,10 @@ export function useWorshipState() {
     handleAddScriptureToSchedule,
     handleAddSongToSchedule,
     updateScheduleAndPersist,
+    displayConfig,
+    isDisplayModalOpen,
+    setIsDisplayModalOpen,
+    handleUpdateDisplayConfig,
     previewContainerRef,
     isScheduleMedia,
     currentActiveMediaUrl,

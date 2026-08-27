@@ -8,32 +8,34 @@ import { QrCode, ZoomIn, ZoomOut, RotateCcw } from "lucide-react";
 import type {
   SlideLayout, TextAlign, AccentColor, CustomSlideTheme,
   TickerConfig, TickerTheme, TickerPosition, TickerSpeed, TickerFontSize,
-  GlobalBackgroundConfig, TextAnimationConfig
+  GlobalBackgroundConfig, TextAnimationConfig,
+  ProjectorDisplayConfig
 } from "@/lib/lyrics";
 import {
   DEFAULT_TICKER_CONFIG, BROADCAST_CHANNEL_NAME,
-  DEFAULT_TEXT_ANIMATION_CONFIG, getTextAnimationVariants, getTextAnimationDuration
+  DEFAULT_TEXT_ANIMATION_CONFIG, getTextAnimationVariants, getTextAnimationDuration,
+  DEFAULT_DISPLAY_CONFIG, getTextShadowCss, getFontFamilyCss
 } from "@/lib/lyrics";
 
-// Responsive pure-CSS viewport typography scaling
-function getResponsiveFontSize(text: string) {
-  if (!text) return '5.5vw';
+// Responsive pure-CSS viewport typography scaling with user fontSizeScale factor
+function getResponsiveFontSize(text: string, scale: number = 1.0) {
+  if (!text) return `${5.5 * scale}vw`;
   const lines = text.trim().split('\n').filter(Boolean);
   const lineCount = lines.length;
   const longestLine = Math.max(...lines.map(l => l.length), 0);
 
   if (lineCount <= 1 && longestLine < 35) {
-    return 'clamp(48px, 6.8vw, 130px)';
+    return `clamp(${Math.round(48 * scale)}px, ${6.8 * scale}vw, ${Math.round(130 * scale)}px)`;
   } else if (lineCount <= 2 && longestLine < 50) {
-    return 'clamp(40px, 5.6vw, 110px)';
+    return `clamp(${Math.round(40 * scale)}px, ${5.6 * scale}vw, ${Math.round(110 * scale)}px)`;
   } else if (lineCount <= 3 && longestLine < 65) {
-    return 'clamp(34px, 4.6vw, 92px)';
+    return `clamp(${Math.round(34 * scale)}px, ${4.6 * scale}vw, ${Math.round(92 * scale)}px)`;
   } else if (lineCount <= 4) {
-    return 'clamp(28px, 3.8vw, 78px)';
+    return `clamp(${Math.round(28 * scale)}px, ${3.8 * scale}vw, ${Math.round(78 * scale)}px)`;
   } else if (lineCount <= 6) {
-    return 'clamp(24px, 3.2vw, 64px)';
+    return `clamp(${Math.round(24 * scale)}px, ${3.2 * scale}vw, ${Math.round(64 * scale)}px)`;
   } else {
-    return 'clamp(20px, 2.7vw, 52px)';
+    return `clamp(${Math.round(20 * scale)}px, ${2.7 * scale}vw, ${Math.round(52 * scale)}px)`;
   }
 }
 
@@ -73,6 +75,21 @@ export default function Projector() {
 
   // Live Scrolling Ticker State
   const [ticker, setTicker] = useState<TickerConfig>(DEFAULT_TICKER_CONFIG);
+
+  // Display & Typography Customization State (with LocalStorage persistence)
+  const [displayConfig, setDisplayConfig] = useState<ProjectorDisplayConfig>(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const saved = localStorage.getItem('worship_display_config');
+        if (saved) return { ...DEFAULT_DISPLAY_CONFIG, ...JSON.parse(saved) };
+      } catch {}
+    }
+    return DEFAULT_DISPLAY_CONFIG;
+  });
+
+  const [autoFitScale, setAutoFitScale] = useState<number>(1);
+  const contentContainerRef = useRef<HTMLDivElement | null>(null);
+  const textElementRef = useRef<HTMLDivElement | null>(null);
 
   // Countdown Timer Engine
   const [countdownLeft, setCountdownLeft] = useState<number>(300);
@@ -243,6 +260,11 @@ export default function Projector() {
       else if (event.data.type === 'MEDIA_MUTE_UNMUTE') {
         setIsVideoMuted(!!event.data.muted);
       }
+      else if (event.data.type === 'DISPLAY_CONFIG_SYNC' || event.data.type === 'SET_DISPLAY_CONFIG') {
+        if (event.data.config) {
+          setDisplayConfig(event.data.config);
+        }
+      }
       else if (event.data.type === 'SET_TEXT_ANIMATION') {
         if (event.data.config) {
           setTextAnim(event.data.config);
@@ -342,6 +364,9 @@ export default function Projector() {
         if (event.data.ticker) {
           setTicker(event.data.ticker);
         }
+        if (event.data.displayConfig) {
+          setDisplayConfig(event.data.displayConfig);
+        }
       }
     };
 
@@ -398,6 +423,13 @@ export default function Projector() {
 
     const restoreFromStorage = async () => {
       try {
+        const savedDisplay = localStorage.getItem('worship_display_config');
+        if (savedDisplay) {
+          setDisplayConfig(JSON.parse(savedDisplay));
+        }
+      } catch (e) { }
+
+      try {
         const saved = localStorage.getItem('worship_live_projector_state');
         if (saved) {
           const data = JSON.parse(saved);
@@ -438,6 +470,12 @@ export default function Projector() {
               webEmbedUrl: data.webEmbedUrl,
               embedType: data.embedType
             });
+            if (data.isTextHidden !== undefined) {
+              setIsTextHidden(data.isTextHidden);
+            }
+            if (data.ticker) {
+              setTicker(data.ticker);
+            }
             if (data.countdownRunning !== undefined) setIsTimerRunning(data.countdownRunning);
             if (typeof data.countdownLeft === 'number' && !isTimerRunning) {
               setCountdownLeft(data.countdownLeft);
@@ -459,6 +497,11 @@ export default function Projector() {
     restoreFromStorage();
 
     const handleStorageChange = (e: StorageEvent) => {
+      if (e.key === 'worship_display_config' && e.newValue) {
+        try {
+          setDisplayConfig(JSON.parse(e.newValue));
+        } catch (e) { }
+      }
       if (e.key === 'worship_live_projector_state') {
         restoreFromStorage();
       }
@@ -819,17 +862,26 @@ export default function Projector() {
             exit={{ opacity: 0, y: 30 }}
             transition={{ duration: 0.25, ease: "easeOut" }}
             className="absolute bottom-8 left-8 right-8 z-20 max-w-[92vw] mx-auto bg-black/85 backdrop-blur-md border border-white/15 rounded-3xl p-6 md:p-8 shadow-2xl flex flex-col items-center justify-center text-center"
+            style={{ fontFamily: getFontFamilyCss(displayConfig.fontFamily) }}
           >
             <p
-              className="font-bold text-white leading-snug whitespace-pre-line mb-2"
-              style={{ fontSize: 'clamp(20px, 2.8vw, 44px)' }}
+              className="font-bold leading-snug whitespace-pre-line mb-2"
+              style={{ 
+                fontSize: `clamp(20px, ${2.8 * displayConfig.fontSizeScale}vw, ${44 * displayConfig.fontSizeScale}px)`,
+                color: displayConfig.textColor,
+                textShadow: getTextShadowCss(displayConfig.textShadow),
+                lineHeight: displayConfig.lineHeight
+              }}
             >
               {verse.text}
             </p>
             {verse.reference && (
               <div className="inline-flex items-center gap-2 mt-1">
                 <span className={`h-1.5 w-6 rounded-full ${getAccentBg(verse.accentColor)}`}></span>
-                <span className={`text-xs md:text-sm font-bold tracking-wider ${getAccentText(verse.accentColor)}`}>
+                <span 
+                  className={`text-xs md:text-sm font-bold tracking-wider ${getAccentText(verse.accentColor)}`}
+                  style={{ color: displayConfig.textColor }}
+                >
                   {verse.reference}
                 </span>
                 <span className={`h-1.5 w-6 rounded-full ${getAccentBg(verse.accentColor)}`}></span>
@@ -867,82 +919,109 @@ export default function Projector() {
             exit={getTextAnimationVariants(textAnim.effect).exit}
             transition={{ duration: getTextAnimationDuration(textAnim.speed), ease: [0.22, 1, 0.36, 1] }}
             style={{ willChange: 'transform, opacity', transform: 'translateZ(0)' }}
-            className={`w-full max-w-[94vw] mx-auto flex flex-col justify-center relative z-10 ${verse.textAlign === 'left'
+            className={`w-full max-w-[94vw] mx-auto flex flex-col justify-center relative z-10 ${
+              (verse.textAlign || displayConfig.textAlign) === 'left'
                 ? 'items-start text-left'
-                : verse.textAlign === 'right'
+                : (verse.textAlign || displayConfig.textAlign) === 'right'
                   ? 'items-end text-right'
                   : 'items-center text-center'
               }`}
           >
-            {String(verse.text || verse.title || '').includes('\n───\n') || String(verse.text || verse.title || '').includes('\n---\n') ? (() => {
-              const fullContent = String(verse.text || verse.title || '');
-              const parts = fullContent.split(/\n───\n|\n---\n/);
-              const top = parts[0] || '';
-              const bottom = parts[1] || '';
-              return (
-                <div className="w-full flex flex-col items-center justify-center gap-3 md:gap-5 mb-4 md:mb-6">
-                  <p
-                    className={`font-black leading-[1.20] tracking-tight text-white w-full whitespace-pre-line ${verse.textAlign === 'left' ? 'text-left' : verse.textAlign === 'right' ? 'text-right' : 'text-center'
-                      }`}
-                    style={{
-                      fontSize: getResponsiveFontSize(top),
-                      textShadow: '0px 4px 32px rgba(0,0,0,1), 0px 0px 14px rgba(0,0,0,0.95)'
-                    }}
-                  >
-                    {top}
-                  </p>
-
-                  <div className="w-full flex items-center justify-center gap-4 my-1 opacity-80">
-                    <div className="h-[2px] flex-1 max-w-[200px] bg-gradient-to-r from-transparent via-indigo-400 to-transparent"></div>
-                    <span className="w-2 h-2 rounded-full bg-indigo-400 shadow-[0_0_12px_rgba(99,102,241,0.9)]"></span>
-                    <div className="h-[2px] flex-1 max-w-[200px] bg-gradient-to-r from-transparent via-indigo-400 to-transparent"></div>
-                  </div>
-
-                  <p
-                    className={`font-semibold italic leading-[1.24] tracking-normal text-neutral-100/95 w-full whitespace-pre-line ${verse.textAlign === 'left' ? 'text-left' : verse.textAlign === 'right' ? 'text-right' : 'text-center'
-                      }`}
-                    style={{
-                      fontSize: getResponsiveFontSize(bottom),
-                      textShadow: '0px 4px 28px rgba(0,0,0,1), 0px 0px 12px rgba(0,0,0,0.9)'
-                    }}
-                  >
-                    {bottom}
-                  </p>
-                </div>
-              );
-            })() : (
-              <p
-                className={`font-black leading-[1.20] tracking-tight mb-4 md:mb-6 text-white w-full whitespace-pre-line ${verse.textAlign === 'left' ? 'text-left' : verse.textAlign === 'right' ? 'text-right' : 'text-center'
-                  }`}
+            <div 
+              ref={contentContainerRef}
+              className="w-full flex flex-col items-center justify-center max-h-[85vh] overflow-hidden"
+            >
+              <div
+                ref={textElementRef}
+                className="w-full transition-transform duration-150 origin-center flex flex-col items-center"
                 style={{
-                  fontSize: fontSizeCss,
-                  textShadow: '0px 4px 32px rgba(0,0,0,1), 0px 0px 14px rgba(0,0,0,0.95)'
+                  transform: autoFitScale < 1 ? `scale(${autoFitScale})` : undefined,
+                  fontFamily: getFontFamilyCss(displayConfig.fontFamily),
+                  color: displayConfig.textColor
                 }}
               >
-                {verse.text || verse.title}
-              </p>
-            )}
+                {String(verse.text || verse.title || '').includes('\n───\n') || String(verse.text || verse.title || '').includes('\n---\n') ? (() => {
+                  const fullContent = String(verse.text || verse.title || '');
+                  const parts = fullContent.split(/\n───\n|\n---\n/);
+                  const top = parts[0] || '';
+                  const bottom = parts[1] || '';
+                  return (
+                    <div className="w-full flex flex-col items-center justify-center gap-3 md:gap-5 mb-4 md:mb-6">
+                      <p
+                        className={`font-black tracking-tight w-full whitespace-pre-line ${
+                          (verse.textAlign || displayConfig.textAlign) === 'left' ? 'text-left' : (verse.textAlign || displayConfig.textAlign) === 'right' ? 'text-right' : 'text-center'
+                        }`}
+                        style={{
+                          fontSize: getResponsiveFontSize(top, displayConfig.fontSizeScale),
+                          color: displayConfig.textColor,
+                          textShadow: getTextShadowCss(displayConfig.textShadow),
+                          lineHeight: displayConfig.lineHeight
+                        }}
+                      >
+                        {top}
+                      </p>
 
-            {verse.reference && (
-              <motion.div
-                initial={{ opacity: 0, y: 4 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.2, delay: 0.04 }}
-                className="inline-flex items-center gap-3 md:gap-5 mt-1"
-              >
-                <div className={`h-[3px] w-10 md:w-16 rounded-full shadow-[0_0_12px_rgba(0,0,0,0.9)] ${getAccentBg(verse.accentColor)}`}></div>
-                <p
-                  className="text-white font-bold tracking-wide"
-                  style={{
-                    fontSize: 'clamp(18px, 2.2vw, 40px)',
-                    textShadow: '0px 2px 14px rgba(0,0,0,1)'
-                  }}
-                >
-                  {verse.reference}
-                </p>
-                <div className={`h-[3px] w-10 md:w-16 rounded-full shadow-[0_0_12px_rgba(0,0,0,0.9)] ${getAccentBg(verse.accentColor)}`}></div>
-              </motion.div>
-            )}
+                      <div className="w-full flex items-center justify-center gap-4 my-1 opacity-80">
+                        <div className="h-[2px] flex-1 max-w-[200px] bg-gradient-to-r from-transparent via-indigo-400 to-transparent"></div>
+                        <span className="w-2 h-2 rounded-full bg-indigo-400 shadow-[0_0_12px_rgba(99,102,241,0.9)]"></span>
+                        <div className="h-[2px] flex-1 max-w-[200px] bg-gradient-to-r from-transparent via-indigo-400 to-transparent"></div>
+                      </div>
+
+                      <p
+                        className={`font-semibold italic tracking-normal w-full whitespace-pre-line opacity-95 ${
+                          (verse.textAlign || displayConfig.textAlign) === 'left' ? 'text-left' : (verse.textAlign || displayConfig.textAlign) === 'right' ? 'text-right' : 'text-center'
+                        }`}
+                        style={{
+                          fontSize: getResponsiveFontSize(bottom, displayConfig.fontSizeScale * 0.85),
+                          color: displayConfig.textColor,
+                          textShadow: getTextShadowCss(displayConfig.textShadow),
+                          lineHeight: displayConfig.lineHeight
+                        }}
+                      >
+                        {bottom}
+                      </p>
+                    </div>
+                  );
+                })() : (
+                  <p
+                    className={`font-black tracking-tight mb-4 md:mb-6 w-full whitespace-pre-line ${
+                      (verse.textAlign || displayConfig.textAlign) === 'left' ? 'text-left' : (verse.textAlign || displayConfig.textAlign) === 'right' ? 'text-right' : 'text-center'
+                    }`}
+                    style={{
+                      fontSize: getResponsiveFontSize(verse.text || verse.title || '', displayConfig.fontSizeScale),
+                      color: displayConfig.textColor,
+                      textShadow: getTextShadowCss(displayConfig.textShadow),
+                      lineHeight: displayConfig.lineHeight,
+                      fontWeight: displayConfig.textWeight === 'black' ? 900 : displayConfig.textWeight === 'bold' ? 700 : 500
+                    }}
+                  >
+                    {verse.text || verse.title}
+                  </p>
+                )}
+
+                {verse.reference && (
+                  <motion.div
+                    initial={{ opacity: 0, y: 4 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ duration: 0.2, delay: 0.04 }}
+                    className="inline-flex items-center gap-3 md:gap-5 mt-1"
+                  >
+                    <div className={`h-[3px] w-10 md:w-16 rounded-full shadow-[0_0_12px_rgba(0,0,0,0.9)] ${getAccentBg(verse.accentColor)}`}></div>
+                    <p
+                      className="font-bold tracking-wide"
+                      style={{
+                        fontSize: `clamp(18px, ${2.2 * displayConfig.fontSizeScale}vw, ${40 * displayConfig.fontSizeScale}px)`,
+                        color: displayConfig.textColor,
+                        textShadow: getTextShadowCss(displayConfig.textShadow)
+                      }}
+                    >
+                      {verse.reference}
+                    </p>
+                    <div className={`h-[3px] w-10 md:w-16 rounded-full shadow-[0_0_12px_rgba(0,0,0,0.9)] ${getAccentBg(verse.accentColor)}`}></div>
+                  </motion.div>
+                )}
+              </div>
+            </div>
           </motion.div>
         )}
       </AnimatePresence>

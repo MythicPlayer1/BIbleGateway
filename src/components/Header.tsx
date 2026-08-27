@@ -5,7 +5,8 @@ import {
   BookOpen, Calendar, Music, Megaphone, 
   EyeOff, Radio, MonitorPlay, Sparkles 
 } from "lucide-react";
-import type { TickerConfig } from "@/lib/lyrics";
+import type { TickerConfig, ProjectorDisplayConfig } from "@/lib/lyrics";
+import { Sliders } from "lucide-react";
 
 interface HeaderProps {
   appMode: 'schedule' | 'bible' | 'lyrics';
@@ -14,6 +15,8 @@ interface HeaderProps {
   tickerConfig: TickerConfig;
   onOpenTickerModal: () => void;
   onOpenBgStudioModal?: () => void;
+  onOpenDisplayModal?: () => void;
+  displayConfig?: ProjectorDisplayConfig;
   isTextHidden: boolean;
   onToggleHideText: () => void;
   isDisplayConnected: boolean;
@@ -27,6 +30,8 @@ export const Header: React.FC<HeaderProps> = ({
   tickerConfig,
   onOpenTickerModal,
   onOpenBgStudioModal,
+  onOpenDisplayModal,
+  displayConfig,
   isTextHidden,
   onToggleHideText,
   isDisplayConnected,
@@ -88,7 +93,25 @@ export const Header: React.FC<HeaderProps> = ({
         </div>
 
         {/* Top Live Actions */}
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2.5">
+          {/* Display & Typography Customizer Button */}
+          {onOpenDisplayModal && (
+            <button
+              onClick={onOpenDisplayModal}
+              className="flex items-center gap-1.5 px-3.5 py-2.5 rounded-full font-bold text-xs uppercase tracking-wider transition-all border shadow-sm active:scale-95 bg-neutral-900 hover:bg-neutral-800 text-neutral-300 hover:text-white border-neutral-700"
+              title="Customize Display Typography, Colors, Contrast & Overflow Protection"
+            >
+              <Sliders size={14} className="text-indigo-400" />
+              <span>DISPLAY</span>
+              {displayConfig && (
+                <span 
+                  className="w-2.5 h-2.5 rounded-full border border-white/40"
+                  style={{ backgroundColor: displayConfig.textColor }}
+                />
+              )}
+            </button>
+          )}
+
           {/* Background Studio Button */}
           {onOpenBgStudioModal && (
             <button

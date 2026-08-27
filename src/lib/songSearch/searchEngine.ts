@@ -17,10 +17,15 @@ export interface IndexedSongItem {
   search_normalized: string;
   aliases: string;
   letter: string;
+  category?: string;
+  artist?: string;
+  songNumber?: number;
 }
 
 export interface SongSearchOptions {
   selectedLetter?: string;
+  selectedCategory?: string;
+  selectedArtist?: string;
   limit?: number;
   searchLyrics?: boolean;
   customSongs?: Song[];
@@ -57,6 +62,7 @@ class SongSearchEngine {
       keys: [
         { name: "title", weight: 0.45 },
         { name: "title_roman", weight: 0.35 },
+        { name: "artist", weight: 0.20 },
         { name: "aliases", weight: 0.15 },
         { name: "search_normalized", weight: 0.05 }
       ],
@@ -79,15 +85,18 @@ class SongSearchEngine {
     this.customSongCacheKey = currentKey;
     const customIndexed: IndexedSongItem[] = customSongs.map(song => {
       const title = song.title || "";
-      const title_roman = romanizeNepaliNatural(title);
-      const search_normalized = normalizeSearchQuery(`${title} ${title_roman}`);
+      const title_roman = song.title_en || romanizeNepaliNatural(title);
+      const search_normalized = normalizeSearchQuery(`${title} ${title_roman} ${song.artist || ""}`);
       return {
         id: song.id,
         title,
         title_roman,
         search_normalized,
-        aliases: `${song.id} ${title_roman} ${song.details || ""}`,
-        letter: song.letter || ""
+        aliases: `${song.id} ${title_roman} ${song.artist || ""} ${song.details || ""}`,
+        letter: song.letter || "",
+        category: song.category || (song.isCustom ? "custom" : "artist"),
+        artist: song.artist || "",
+        songNumber: song.songNumber
       };
     });
 
@@ -111,24 +120,37 @@ class SongSearchEngine {
       this.updateCustomSongs(options.customSongs);
     }
 
-    // 1. Empty Query -> Alphabet or Full List
-    if (!rawQuery) {
-      if (!options.selectedLetter) {
-        return limit ? this.indexItems.slice(0, limit).map((i) => i.id) : this.indexItems.map((i) => i.id);
+    const matchesCategoryAndArtist = (item: IndexedSongItem): boolean => {
+      if (options.selectedCategory && options.selectedCategory !== "all") {
+        if (options.selectedCategory === "bhajan" && item.category !== "bhajan") return false;
+        if (options.selectedCategory === "chorus" && item.category !== "chorus") return false;
+        if (options.selectedCategory === "artist" && item.category !== "artist") return false;
+        if (options.selectedCategory === "custom" && item.category !== "custom" && !item.id.startsWith("custom-song-")) return false;
       }
-      const l = options.selectedLetter.toLowerCase();
-      const filtered = this.indexItems.filter((i) => {
-        return (
-          (i.letter && i.letter.toLowerCase() === l) ||
-          i.title.startsWith(options.selectedLetter!) ||
-          i.title_roman.toLowerCase().startsWith(l)
-        );
-      });
+      if (options.selectedArtist && item.artist !== options.selectedArtist) {
+        return false;
+      }
+      return true;
+    };
+
+    // 1. Empty Query -> Filtered by Category, Artist & Letter
+    if (!rawQuery) {
+      let filtered = this.indexItems.filter(matchesCategoryAndArtist);
+      if (options.selectedLetter) {
+        const l = options.selectedLetter.toLowerCase();
+        filtered = filtered.filter((i) => {
+          return (
+            (i.letter && i.letter.toLowerCase() === l) ||
+            i.title.startsWith(options.selectedLetter!) ||
+            i.title_roman.toLowerCase().startsWith(l)
+          );
+        });
+      }
       return limit ? filtered.slice(0, limit).map((i) => i.id) : filtered.map((i) => i.id);
     }
 
     // Cache lookup
-    const cacheKey = `${rawQuery.toLowerCase()}__${options.selectedLetter || ""}__${limit || "all"}__${Boolean(options.searchLyrics)}`;
+    const cacheKey = `${rawQuery.toLowerCase()}__${options.selectedCategory || "all"}__${options.selectedArtist || ""}__${options.selectedLetter || ""}__${limit || "all"}__${Boolean(options.searchLyrics)}`;
     if (this.queryCache.has(cacheKey)) {
       return this.queryCache.get(cacheKey)!;
     }
@@ -146,6 +168,8 @@ class SongSearchEngine {
 
     // 2. High-speed Direct, Prefix & Multi-Token Scan (< 1-2ms)
     for (const item of this.indexItems) {
+      if (!matchesCategoryAndArtist(item)) continue;
+
       // Direct Hymnal / Song ID Match
       if (numericOnly) {
         if (item.aliases.includes(rawQuery.toLowerCase()) || item.aliases.includes(numericOnly)) {
@@ -199,7 +223,7 @@ class SongSearchEngine {
     if (finalIds.length === 0 && normalizedQuery.length >= 2) {
       const fuseResults = this.fuse.search(normalizedQuery, limit ? { limit } : undefined);
       for (const res of fuseResults) {
-        if (!matchedSet.has(res.item.id)) {
+        if (matchesCategoryAndArtist(res.item) && !matchedSet.has(res.item.id)) {
           matchedSet.add(res.item.id);
           finalIds.push(res.item.id);
         }

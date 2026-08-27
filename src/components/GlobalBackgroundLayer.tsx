@@ -81,22 +81,40 @@ export function GlobalBackgroundLayer({ config, legacyBgUrl, legacyBgType }: Glo
   return (
     <div className="absolute inset-0 z-0 overflow-hidden select-none">
       
-      {/* 1. SLIDESHOW MODE (MULTIPLE IMAGES WITH SUPER SMOOTH MOTION) */}
+      {/* 1. SLIDESHOW / SINGLE IMAGE BACKGROUND MODE (WITH CINEMATIC KEN BURNS MOTION) */}
       {mode === 'slideshow' && activeImage?.url && (
         <AnimatePresence mode="popLayout">
           <motion.div
             key={activeImage.id || activeImage.url}
-            initial={variants.initial}
-            animate={variants.animate}
+            initial={images.length > 1 ? variants.initial : { opacity: 0, scale: 1 }}
+            animate={
+              images.length > 1 
+                ? variants.animate 
+                : { 
+                    opacity: 1, 
+                    scale: [1, 1.06, 1], 
+                    x: [0, -8, 0], 
+                    y: [0, 5, 0] 
+                  }
+            }
             exit={variants.exit}
-            transition={{
-              opacity: { duration: durationSec, ease: "easeInOut" },
-              scale: effect === 'zoom' 
-                ? { duration: Math.max(intervalSec, durationSec), ease: "linear" } 
-                : { duration: durationSec, ease: "easeOut" },
-              x: { duration: durationSec, ease: [0.25, 1, 0.5, 1] },
-              filter: { duration: durationSec, ease: "easeOut" }
-            }}
+            transition={
+              images.length > 1 
+                ? {
+                    opacity: { duration: durationSec, ease: "easeInOut" },
+                    scale: effect === 'zoom' 
+                      ? { duration: Math.max(intervalSec, durationSec), ease: "linear" } 
+                      : { duration: durationSec, ease: "easeOut" },
+                    x: { duration: durationSec, ease: [0.25, 1, 0.5, 1] },
+                    filter: { duration: durationSec, ease: "easeOut" }
+                  }
+                : {
+                    opacity: { duration: 0.6, ease: "easeOut" },
+                    scale: { duration: 30, repeat: Infinity, ease: "easeInOut" },
+                    x: { duration: 30, repeat: Infinity, ease: "easeInOut" },
+                    y: { duration: 30, repeat: Infinity, ease: "easeInOut" }
+                  }
+            }
             className="absolute inset-0 w-full h-full"
           >
             <img

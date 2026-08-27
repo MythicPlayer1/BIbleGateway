@@ -6,6 +6,7 @@ import {
   type TickerConfig, DEFAULT_TICKER_CONFIG,
   type GlobalBackgroundConfig, DEFAULT_BACKGROUND_CONFIG,
   type TextAnimationConfig, DEFAULT_TEXT_ANIMATION_CONFIG,
+  type ProjectorDisplayConfig, DEFAULT_DISPLAY_CONFIG,
   type BibleTranslation
 } from "@/lib/lyrics";
 import { nepaliToRoman } from "@/lib/transliterate";
@@ -17,10 +18,17 @@ export const initialSongsLibrary: Song[] = (rawSongsData as any[]).map((s: any, 
   id: s.id || `song-${idx}`,
   title: s.title || '',
   title_en: s.title_en || nepaliToRoman(s.title || ''),
-  artist: s.authors || s.artist || 'Worship Team',
+  artist: s.artist || s.authors || 'Worship Team',
   authors: s.authors,
   details: s.details,
   letter: s.letter,
+  category: s.category || 'artist',
+  songNumber: s.songNumber,
+  mainChords: s.mainChords,
+  beat: s.beat,
+  chordsLyrics: s.chordsLyrics,
+  audioUrl: s.audioUrl,
+  videoUrl: s.videoUrl,
   rawLyrics: s.rawLyrics || s.lyrics || '',
   rawLyrics_en: s.rawLyrics_en || nepaliToRoman(s.rawLyrics || s.lyrics || ''),
   isDefault: true,
@@ -54,6 +62,8 @@ export interface WorshipStoreState {
   allSongs: Song[];
   songSearchQuery: string;
   selectedLetter: string;
+  selectedCategory: 'all' | 'bhajan' | 'chorus' | 'artist' | 'custom';
+  selectedArtist: string;
   activeLibrarySongId: string;
   isSongModalOpen: boolean;
   songFormData: Partial<Song>;
@@ -62,6 +72,8 @@ export interface WorshipStoreState {
   setAllSongs: (songs: Song[]) => void;
   setSongSearchQuery: (query: string) => void;
   setSelectedLetter: (letter: string) => void;
+  setSelectedCategory: (category: 'all' | 'bhajan' | 'chorus' | 'artist' | 'custom') => void;
+  setSelectedArtist: (artist: string) => void;
   setActiveLibrarySongId: (id: string) => void;
   setIsSongModalOpen: (open: boolean) => void;
   setSongFormData: (data: Partial<Song> | ((prev: Partial<Song>) => Partial<Song>)) => void;
@@ -130,6 +142,12 @@ export interface WorshipStoreState {
   setIsCountdownRunning: (running: boolean) => void;
   setIsVideoPlaying: (playing: boolean | ((prev: boolean) => boolean)) => void;
   setIsVideoMuted: (muted: boolean | ((prev: boolean) => boolean)) => void;
+
+  // Display & Typography Customization
+  displayConfig: ProjectorDisplayConfig;
+  isDisplayModalOpen: boolean;
+  setDisplayConfig: (config: ProjectorDisplayConfig | ((prev: ProjectorDisplayConfig) => ProjectorDisplayConfig)) => void;
+  setIsDisplayModalOpen: (open: boolean) => void;
 
   // Add Item Modal
   isAddItemModalOpen: boolean;
@@ -206,6 +224,8 @@ export const useWorshipStore = create<WorshipStoreState>((set) => ({
   allSongs: initialSongsLibrary,
   songSearchQuery: '',
   selectedLetter: '',
+  selectedCategory: 'all',
+  selectedArtist: '',
   activeLibrarySongId: initialSongsLibrary[0]?.id || '',
   isSongModalOpen: false,
   songFormData: { title: '', artist: '', rawLyrics: '' },
@@ -214,6 +234,11 @@ export const useWorshipStore = create<WorshipStoreState>((set) => ({
   setAllSongs: (songs) => set({ allSongs: songs }),
   setSongSearchQuery: (query) => set({ songSearchQuery: query }),
   setSelectedLetter: (letter) => set({ selectedLetter: letter }),
+  setSelectedCategory: (category) => set((state) => ({
+    selectedCategory: category,
+    selectedArtist: category === 'artist' ? state.selectedArtist : ''
+  })),
+  setSelectedArtist: (artist) => set({ selectedArtist: artist }),
   setActiveLibrarySongId: (id) => set({ activeLibrarySongId: id }),
   setIsSongModalOpen: (open) => set({ isSongModalOpen: open }),
   setSongFormData: (updater) => set((state) => ({
@@ -306,6 +331,28 @@ export const useWorshipStore = create<WorshipStoreState>((set) => ({
   setIsVideoMuted: (updater) => set((state) => ({
     isVideoMuted: typeof updater === 'function' ? updater(state.isVideoMuted) : updater
   })),
+
+  // Display & Typography Customization
+  displayConfig: (() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const saved = localStorage.getItem('worship_display_config');
+        if (saved) return { ...DEFAULT_DISPLAY_CONFIG, ...JSON.parse(saved) };
+      } catch {}
+    }
+    return DEFAULT_DISPLAY_CONFIG;
+  })(),
+  isDisplayModalOpen: false,
+  setDisplayConfig: (updater) => set((state) => {
+    const nextConfig = typeof updater === 'function' ? updater(state.displayConfig) : updater;
+    if (typeof window !== 'undefined') {
+      try {
+        localStorage.setItem('worship_display_config', JSON.stringify(nextConfig));
+      } catch {}
+    }
+    return { displayConfig: nextConfig };
+  }),
+  setIsDisplayModalOpen: (open) => set({ isDisplayModalOpen: open }),
 
   // Add Item Modal
   isAddItemModalOpen: false,

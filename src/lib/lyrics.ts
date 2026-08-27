@@ -7,6 +7,13 @@ export interface Song {
   details?: string;
   letter?: string;
   language?: 'Nepali' | 'English';
+  category?: 'bhajan' | 'chorus' | 'artist' | 'custom';
+  songNumber?: number;
+  mainChords?: string;
+  beat?: string;
+  chordsLyrics?: string;
+  audioUrl?: string;
+  videoUrl?: string;
   rawLyrics: string;
   rawLyrics_en?: string;
   isDefault?: boolean;
@@ -16,6 +23,65 @@ export interface Song {
 export type SlideLayout = 'standard' | 'lowerthird' | 'giving' | 'countdown';
 export type TextAlign = 'center' | 'left' | 'right';
 export type AccentColor = 'indigo' | 'amber' | 'emerald' | 'rose' | 'cyan' | 'white';
+
+export type TextShadowPreset = 'none' | 'subtle' | 'strong' | 'deep' | 'glow' | 'outline';
+export type DisplayFontFamily = 'default' | 'inter' | 'poppins' | 'serif' | 'mono';
+
+export interface ProjectorDisplayConfig {
+  fontSizeScale: number; // 0.6 to 2.0 (default 1.0)
+  textColor: string; // e.g. '#ffffff'
+  fontFamily: DisplayFontFamily;
+  textAlign: TextAlign;
+  textShadow: TextShadowPreset;
+  textWeight: 'normal' | 'medium' | 'semibold' | 'bold' | 'black';
+  lineHeight: number; // 1.0 to 1.8 (default 1.25)
+  autoFit: boolean; // default true: auto downscales to prevent any text clipping/overflow
+}
+
+export const DEFAULT_DISPLAY_CONFIG: ProjectorDisplayConfig = {
+  fontSizeScale: 1.0,
+  textColor: '#ffffff',
+  fontFamily: 'default',
+  textAlign: 'center',
+  textShadow: 'strong',
+  textWeight: 'bold',
+  lineHeight: 1.25,
+  autoFit: true
+};
+
+export function getTextShadowCss(preset: TextShadowPreset = 'strong'): string {
+  switch (preset) {
+    case 'none':
+      return 'none';
+    case 'subtle':
+      return '0px 2px 10px rgba(0,0,0,0.8)';
+    case 'deep':
+      return '0px 6px 36px rgba(0,0,0,1), 0px 3px 18px rgba(0,0,0,0.95), 0px 0px 10px rgba(0,0,0,0.9)';
+    case 'glow':
+      return '0px 0px 24px rgba(99,102,241,0.85), 0px 4px 28px rgba(0,0,0,1)';
+    case 'outline':
+      return '-2px -2px 0 #000, 2px -2px 0 #000, -2px 2px 0 #000, 2px 2px 0 #000, 0px 4px 24px rgba(0,0,0,1)';
+    case 'strong':
+    default:
+      return '0px 4px 32px rgba(0,0,0,1), 0px 2px 14px rgba(0,0,0,0.95), 0px 0px 8px rgba(0,0,0,0.85)';
+  }
+}
+
+export function getFontFamilyCss(family: DisplayFontFamily = 'default'): string {
+  switch (family) {
+    case 'inter':
+      return "'Inter', sans-serif";
+    case 'poppins':
+      return "'Poppins', 'Outfit', sans-serif";
+    case 'serif':
+      return "'Merriweather', 'Georgia', serif";
+    case 'mono':
+      return "'JetBrains Mono', monospace";
+    case 'default':
+    default:
+      return "system-ui, -apple-system, sans-serif";
+  }
+}
 
 export type TickerTheme = 'amber' | 'emerald' | 'cyan' | 'rose' | 'indigo' | 'white';
 export type TickerPosition = 'bottom' | 'top';
@@ -409,10 +475,14 @@ export const defaultSchedule: ScheduleItem[] = [];
 export function parseLyricsToSlides(rawLyrics?: string | null): SongSlide[] {
   if (!rawLyrics || typeof rawLyrics !== 'string' || !rawLyrics.trim()) return [];
 
-  const normalized = rawLyrics.replace(/\r\n/g, '\n').trim();
+  // Clean guitar chord brackets [A], [F#m], [D/E] etc. for projection display
+  const cleanedLyrics = rawLyrics
+    .replace(/\[[A-G][b#]?(?:maj|min|m|M|sus|dim|aug|add)?[0-9]?(?:\/[A-G][b#]?)?\]/g, "")
+    .replace(/\r\n/g, '\n')
+    .trim();
 
   // Split by double-newline stanza separations if present
-  const rawBlocks = normalized.split(/\n\s*\n+/);
+  const rawBlocks = cleanedLyrics.split(/\n\s*\n+/);
   const slides: SongSlide[] = [];
 
   const sectionHeaderRegex = /^\s*(?:\[(.*?)\]|((?:को\.|कोरस:|कोरस\b)|(?:[१२३४५६७८९०]+\.)|(?:Verse\s*\d+:?|\d+\.)|(?:Chorus:?|Bridge:?)))\s*(.*)$/i;
@@ -420,7 +490,7 @@ export function parseLyricsToSlides(rawLyrics?: string | null): SongSlide[] {
   let slideCount = 1;
 
   for (const block of rawBlocks) {
-    const rawLines = block.split('\n').map(l => l.trim()).filter(Boolean);
+    const rawLines = block.split('\n').map(l => l.replace(/[ \t]+/g, ' ').trim()).filter(Boolean);
     if (rawLines.length === 0) continue;
 
     let currentSection = `Slide ${slideCount}`;
@@ -501,11 +571,11 @@ export function parseLyricsToSlides(rawLyrics?: string | null): SongSlide[] {
     }
   }
 
-  if (slides.length === 0 && normalized) {
+  if (slides.length === 0 && cleanedLyrics) {
     slides.push({
       section: "Lyrics",
-      lines: normalized.split('\n').filter(Boolean),
-      text: normalized
+      lines: cleanedLyrics.split('\n').filter(Boolean),
+      text: cleanedLyrics
     });
   }
 

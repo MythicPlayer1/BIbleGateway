@@ -195,14 +195,28 @@ function buildIndex() {
 
   const searchIndex = rawData.map((song) => {
     const rawTitle = song.title || "";
-    const naturalRomanTitle = romanizeNepaliNatural(rawTitle);
-    const searchNormalized = normalizeSearchQuery(`${rawTitle} ${naturalRomanTitle}`);
+    const naturalRomanTitle = song.title_en || romanizeNepaliNatural(rawTitle);
+    const artistStr = song.artist || "";
+    const searchNormalized = normalizeSearchQuery(`${rawTitle} ${naturalRomanTitle} ${artistStr}`);
     const hymnalAliases = extractHymnalAliases(song.details, song.id);
+
+    if (song.songNumber) {
+      hymnalAliases.push(`bhajan ${song.songNumber}`);
+      hymnalAliases.push(`bhajan #${song.songNumber}`);
+      hymnalAliases.push(`b${song.songNumber}`);
+      hymnalAliases.push(String(song.songNumber));
+    }
+
+    if (artistStr) {
+      hymnalAliases.push(artistStr.toLowerCase());
+      hymnalAliases.push(normalizeSearchQuery(artistStr));
+    }
 
     // Extract first hook line from lyrics for chorus searching
     let firstLyricLine = "";
-    if (song.lyrics) {
-      const lines = song.lyrics.split("\n").map((l) => l.trim()).filter((l) => l && !l.startsWith("को.") && !l.startsWith("१."));
+    const lyricsSource = song.rawLyrics || song.lyrics || "";
+    if (lyricsSource) {
+      const lines = lyricsSource.split("\n").map((l) => l.trim()).filter((l) => l && !l.startsWith("को.") && !l.startsWith("१."));
       if (lines.length > 0) {
         firstLyricLine = romanizeNepaliNatural(lines[0].substring(0, 50));
       }
@@ -220,7 +234,10 @@ function buildIndex() {
       title_roman: naturalRomanTitle,
       search_normalized: searchNormalized,
       aliases: aliases.join(" "),
-      letter: song.letter || ""
+      letter: song.letter || "",
+      category: song.category || "artist",
+      artist: artistStr,
+      songNumber: song.songNumber || undefined
     };
   });
 

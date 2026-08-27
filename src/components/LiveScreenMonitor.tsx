@@ -7,30 +7,34 @@ import {
   Play, Pause, RotateCcw, QrCode, Sparkles, ChevronLeft, ChevronRight,
   Volume2, VolumeX, Wand2, Sliders, Globe, Presentation
 } from "lucide-react";
-import type { ScheduleItem, GlobalBackgroundConfig, TextAnimationConfig, TextAnimationEffect, TextAnimationSpeed } from "@/lib/lyrics";
+import type { 
+  ScheduleItem, GlobalBackgroundConfig, TextAnimationConfig, TextAnimationEffect, TextAnimationSpeed,
+  ProjectorDisplayConfig
+} from "@/lib/lyrics";
 import { 
-  getTextAnimationVariants, getTextAnimationDuration, DEFAULT_TEXT_ANIMATION_CONFIG 
+  getTextAnimationVariants, getTextAnimationDuration, DEFAULT_TEXT_ANIMATION_CONFIG,
+  DEFAULT_DISPLAY_CONFIG, getTextShadowCss, getFontFamilyCss 
 } from "@/lib/lyrics";
 import { GlobalBackgroundLayer } from "@/components/GlobalBackgroundLayer";
 
-function getResponsivePreviewFontSize(text: string) {
-  if (!text) return '24px';
+function getResponsivePreviewFontSize(text: string, scale: number = 1.0) {
+  if (!text) return `${24 * scale}px`;
   const lines = text.trim().split('\n').filter(Boolean);
   const lineCount = lines.length;
   const longestLine = Math.max(...lines.map(l => l.length), 0);
 
   if (lineCount <= 1 && longestLine < 35) {
-    return 'clamp(26px, 3.2vw, 44px)';
+    return `clamp(${Math.round(26 * scale)}px, ${3.2 * scale}vw, ${Math.round(44 * scale)}px)`;
   } else if (lineCount <= 2 && longestLine < 50) {
-    return 'clamp(22px, 2.6vw, 36px)';
+    return `clamp(${Math.round(22 * scale)}px, ${2.6 * scale}vw, ${Math.round(36 * scale)}px)`;
   } else if (lineCount <= 3 && longestLine < 65) {
-    return 'clamp(19px, 2.2vw, 30px)';
+    return `clamp(${Math.round(19 * scale)}px, ${2.2 * scale}vw, ${Math.round(30 * scale)}px)`;
   } else if (lineCount <= 4) {
-    return 'clamp(17px, 1.8vw, 26px)';
+    return `clamp(${Math.round(17 * scale)}px, ${1.8 * scale}vw, ${Math.round(26 * scale)}px)`;
   } else if (lineCount <= 6) {
-    return 'clamp(14px, 1.5vw, 22px)';
+    return `clamp(${Math.round(14 * scale)}px, ${1.5 * scale}vw, ${Math.round(22 * scale)}px)`;
   } else {
-    return 'clamp(13px, 1.3vw, 19px)';
+    return `clamp(${Math.round(13 * scale)}px, ${1.3 * scale}vw, ${Math.round(19 * scale)}px)`;
   }
 }
 
@@ -39,6 +43,8 @@ interface LiveScreenMonitorProps {
   globalBgConfig?: GlobalBackgroundConfig;
   textAnimConfig?: TextAnimationConfig;
   onUpdateTextAnimConfig?: (config: TextAnimationConfig) => void;
+  displayConfig?: ProjectorDisplayConfig;
+  onOpenDisplaySettingsModal?: () => void;
   localBgUrl: string | null;
   localBgType: 'video' | 'image' | null;
   loading: boolean;
@@ -74,6 +80,8 @@ export const LiveScreenMonitor: React.FC<LiveScreenMonitorProps> = ({
   globalBgConfig,
   textAnimConfig = DEFAULT_TEXT_ANIMATION_CONFIG,
   onUpdateTextAnimConfig,
+  displayConfig = DEFAULT_DISPLAY_CONFIG,
+  onOpenDisplaySettingsModal,
   localBgUrl,
   localBgType,
   loading,
@@ -138,6 +146,22 @@ export const LiveScreenMonitor: React.FC<LiveScreenMonitorProps> = ({
           </div>
           
           <div className="flex items-center gap-2.5">
+            {onOpenDisplaySettingsModal && (
+              <button
+                type="button"
+                onClick={onOpenDisplaySettingsModal}
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-neutral-800 hover:bg-neutral-700 text-neutral-200 hover:text-white rounded-xl border border-neutral-700 text-xs font-bold transition-all shadow-sm group"
+                title="Customize Font Size, Text Color, Shadows & Auto-Fit"
+              >
+                <Sliders size={13} className="text-indigo-400 group-hover:rotate-45 transition-transform" />
+                <span>Typography ({Math.round(displayConfig.fontSizeScale * 100)}%)</span>
+                <span 
+                  className="w-3 h-3 rounded-full border border-white/30 ml-0.5 shadow-sm"
+                  style={{ backgroundColor: displayConfig.textColor }}
+                />
+              </button>
+            )}
+
             <button
               type="button"
               onClick={() => {
@@ -439,8 +463,15 @@ export const LiveScreenMonitor: React.FC<LiveScreenMonitorProps> = ({
                   animate={getTextAnimationVariants(textAnimConfig.effect).animate}
                   exit={getTextAnimationVariants(textAnimConfig.effect).exit}
                   transition={{ duration: getTextAnimationDuration(textAnimConfig.speed), ease: [0.22, 1, 0.36, 1] }}
-                  style={{ willChange: 'transform, opacity', transform: 'translateZ(0)' }}
-                  className="w-full max-w-[94%] flex flex-col items-center text-center relative z-20"
+                  style={{ 
+                    willChange: 'transform, opacity', 
+                    transform: 'translateZ(0)',
+                    fontFamily: getFontFamilyCss(displayConfig.fontFamily),
+                    color: displayConfig.textColor
+                  }}
+                  className={`w-full max-w-[94%] flex flex-col relative z-20 ${
+                    displayConfig.textAlign === 'left' ? 'items-start text-left' : displayConfig.textAlign === 'right' ? 'items-end text-right' : 'items-center text-center'
+                  }`}
                 >
                   {currentPreviewText.includes('\n───\n') || currentPreviewText.includes('\n---\n') ? (() => {
                     const parts = currentPreviewText.split(/\n───\n|\n---\n/);
@@ -449,10 +480,14 @@ export const LiveScreenMonitor: React.FC<LiveScreenMonitorProps> = ({
                     return (
                       <div className="w-full flex flex-col items-center justify-center gap-2 md:gap-3 mb-3">
                         <p 
-                          className="font-black text-white leading-snug whitespace-pre-line tracking-tight w-full"
+                          className={`font-black leading-snug whitespace-pre-line tracking-tight w-full ${
+                            displayConfig.textAlign === 'left' ? 'text-left' : displayConfig.textAlign === 'right' ? 'text-right' : 'text-center'
+                          }`}
                           style={{ 
-                            fontSize: getResponsivePreviewFontSize(top),
-                            textShadow: '0px 4px 24px rgba(0,0,0,1), 0px 0px 8px rgba(0,0,0,0.8)' 
+                            fontSize: getResponsivePreviewFontSize(top, displayConfig.fontSizeScale),
+                            color: displayConfig.textColor,
+                            textShadow: getTextShadowCss(displayConfig.textShadow),
+                            lineHeight: displayConfig.lineHeight
                           }}
                         >
                           {top}
@@ -465,10 +500,14 @@ export const LiveScreenMonitor: React.FC<LiveScreenMonitorProps> = ({
                         </div>
 
                         <p 
-                          className="font-semibold text-neutral-100/95 italic leading-snug whitespace-pre-line tracking-normal w-full"
+                          className={`font-semibold italic leading-snug whitespace-pre-line tracking-normal w-full opacity-95 ${
+                            displayConfig.textAlign === 'left' ? 'text-left' : displayConfig.textAlign === 'right' ? 'text-right' : 'text-center'
+                          }`}
                           style={{ 
-                            fontSize: getResponsivePreviewFontSize(bottom),
-                            textShadow: '0px 4px 20px rgba(0,0,0,1), 0px 0px 8px rgba(0,0,0,0.8)' 
+                            fontSize: getResponsivePreviewFontSize(bottom, displayConfig.fontSizeScale * 0.85),
+                            color: displayConfig.textColor,
+                            textShadow: getTextShadowCss(displayConfig.textShadow),
+                            lineHeight: displayConfig.lineHeight
                           }}
                         >
                           {bottom}
@@ -478,10 +517,15 @@ export const LiveScreenMonitor: React.FC<LiveScreenMonitorProps> = ({
                   })() : (
                     <p 
                       ref={previewTextRef}
-                      className="font-black text-white leading-snug mb-4 whitespace-pre-line tracking-tight w-full"
+                      className={`font-black leading-snug mb-4 whitespace-pre-line tracking-tight w-full ${
+                        displayConfig.textAlign === 'left' ? 'text-left' : displayConfig.textAlign === 'right' ? 'text-right' : 'text-center'
+                      }`}
                       style={{ 
-                        fontSize: getResponsivePreviewFontSize(currentPreviewText),
-                        textShadow: '0px 4px 24px rgba(0,0,0,1), 0px 0px 8px rgba(0,0,0,0.8)' 
+                        fontSize: getResponsivePreviewFontSize(currentPreviewText, displayConfig.fontSizeScale),
+                        color: displayConfig.textColor,
+                        textShadow: getTextShadowCss(displayConfig.textShadow),
+                        lineHeight: displayConfig.lineHeight,
+                        fontWeight: displayConfig.textWeight === 'black' ? 900 : displayConfig.textWeight === 'bold' ? 700 : 500
                       }}
                     >
                       {currentPreviewText}
@@ -491,7 +535,13 @@ export const LiveScreenMonitor: React.FC<LiveScreenMonitorProps> = ({
                   {currentPreviewReference && (
                     <div className="inline-flex items-center gap-2.5 mt-1">
                       <div className="h-[2.5px] w-8 bg-indigo-500 rounded-full"></div>
-                      <p className="text-xs md:text-sm text-white font-bold tracking-wide" style={{ textShadow: '0px 2px 10px rgba(0,0,0,1)' }}>
+                      <p 
+                        className="text-xs md:text-sm font-bold tracking-wide" 
+                        style={{ 
+                          color: displayConfig.textColor,
+                          textShadow: getTextShadowCss(displayConfig.textShadow) 
+                        }}
+                      >
                         {currentPreviewReference}
                       </p>
                       <div className="h-[2.5px] w-8 bg-indigo-500 rounded-full"></div>

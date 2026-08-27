@@ -53,7 +53,7 @@ export const SongItemForm: React.FC<SongItemFormProps> = ({
     <div className="space-y-4">
       <div>
         <label className="block text-xs font-bold text-neutral-400 uppercase mb-1.5 flex items-center justify-between">
-          <span>Search & Select from 2,101 Worship Songs</span>
+          <span>Search & Select from 1,562 Worship Songs & Bhajans</span>
           <span className="text-[10px] text-indigo-400 font-mono">({modalFilteredSongs.length} matches)</span>
         </label>
         <div className="relative mb-2">
@@ -62,7 +62,7 @@ export const SongItemForm: React.FC<SongItemFormProps> = ({
             type="text"
             value={modalSongSearch}
             onChange={(e) => setModalSongSearch(e.target.value)}
-            placeholder="Search in English or Nepali (e.g. 'dhanyabad', 'agapya', 'kb:s140')..."
+            placeholder="Search by title, Roman, Bhajan #, or artist (e.g. '509', 'dhanyabad', 'Michael')..."
             className="w-full bg-neutral-900 border border-neutral-700 rounded-xl pl-9 pr-3 py-2.5 text-xs text-white outline-none focus:ring-2 focus:ring-indigo-500"
           />
         </div>
@@ -77,13 +77,25 @@ export const SongItemForm: React.FC<SongItemFormProps> = ({
               onClick={() => setNewItemData(prev => ({ ...prev, songId: song.id }))}
               className={`p-2.5 rounded-lg text-xs cursor-pointer flex items-center justify-between transition-colors ${
                 newItemData.songId === song.id
-                  ? 'bg-indigo-600 text-white font-bold'
+                  ? 'bg-indigo-600 text-white font-bold shadow-sm'
                   : 'text-neutral-300 hover:bg-neutral-800'
               }`}
             >
               <div className="truncate pr-2">
-                <p className="truncate font-semibold">{song.title}</p>
-                {song.title_en && <p className="text-[10px] opacity-80">{song.title_en}</p>}
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  <p className="truncate font-semibold">{song.title}</p>
+                  {song.category === 'bhajan' && (
+                    <span className="px-1.5 py-0.2 bg-amber-950/90 text-amber-300 border border-amber-600/50 rounded text-[9px] font-bold">
+                      Bhajan #{song.songNumber}
+                    </span>
+                  )}
+                  {song.artist && song.artist !== 'Bhajan' && song.artist !== 'Unknown Artist' && (
+                    <span className="px-1.5 py-0.2 bg-violet-950/90 text-violet-300 border border-violet-600/50 rounded text-[9px] font-semibold">
+                      {song.artist}
+                    </span>
+                  )}
+                </div>
+                {song.title_en && <p className="text-[10px] opacity-80 mt-0.5">{song.title_en}</p>}
               </div>
               {newItemData.songId === song.id && <Check size={14} className="shrink-0" />}
             </div>
