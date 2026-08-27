@@ -79,6 +79,26 @@ export const SongLibrary: React.FC<SongLibraryProps> = ({
   selectedSlideIndex,
   onSelectSlideIndex
 }) => {
+  const [visibleCount, setVisibleCount] = React.useState(50);
+
+  // Reset pagination on search or letter filter change
+  React.useEffect(() => {
+    setVisibleCount(50);
+  }, [filteredSongs, songSearchQuery, selectedLetter]);
+
+  const handleScroll = (e: React.UIEvent<HTMLDivElement>) => {
+    const { scrollTop, scrollHeight, clientHeight } = e.currentTarget;
+    if (scrollHeight - scrollTop - clientHeight < 120) {
+      if (visibleCount < filteredSongs.length) {
+        setVisibleCount((prev) => Math.min(prev + 50, filteredSongs.length));
+      }
+    }
+  };
+
+  const visibleSongs = React.useMemo(() => {
+    return filteredSongs.slice(0, visibleCount);
+  }, [filteredSongs, visibleCount]);
+
   return (
     <div className="bg-[#0e0e0e] p-6 rounded-3xl border border-neutral-800 shadow-xl space-y-4 flex-1 flex flex-col">
       {/* Header */}
@@ -106,7 +126,7 @@ export const SongLibrary: React.FC<SongLibraryProps> = ({
           type="text"
           value={songSearchQuery}
           onChange={(e) => setSongSearchQuery(e.target.value)}
-          placeholder="खोज्नुहोस् / Type in English or Nepali (e.g. 'dhanyabad', 'agapya', 'kb:s140')..."
+          placeholder="खोज्नुहोस् / Type in Roman Nepali or Devanagari (e.g. 'mero hridayale', 'dhanyabad', 'kb:140')..."
           className="w-full bg-neutral-900/90 border border-neutral-700 rounded-2xl pl-10 pr-10 py-3 text-xs text-white placeholder-neutral-500 focus:ring-2 focus:ring-indigo-500 outline-none shadow-inner"
         />
         {songSearchQuery && (
@@ -118,6 +138,19 @@ export const SongLibrary: React.FC<SongLibraryProps> = ({
           </button>
         )}
       </div>
+
+      {/* Instant Search Result Count Badge */}
+      {songSearchQuery.trim() && (
+        <div className="flex items-center justify-between px-1 text-[11px] text-neutral-400 font-medium">
+          <span>Found <strong className="text-indigo-400">{filteredSongs.length}</strong> matching songs</span>
+          <button
+            onClick={() => setSongSearchQuery("")}
+            className="text-neutral-500 hover:text-neutral-300 text-[10px] underline"
+          >
+            Clear Search
+          </button>
+        </div>
+      )}
 
       {/* Alphabet Filter Scroll */}
       <div className="flex gap-1.5 overflow-x-auto pb-1.5 pt-0.5 no-scrollbar">
@@ -137,8 +170,11 @@ export const SongLibrary: React.FC<SongLibraryProps> = ({
       </div>
 
       {/* Songs List with Transliterated English Titles */}
-      <div className="space-y-2 flex-1 max-h-[260px] overflow-y-auto pr-1">
-        {filteredSongs.map(song => {
+      <div 
+        onScroll={handleScroll}
+        className="space-y-2 flex-1 max-h-[260px] overflow-y-auto pr-1"
+      >
+        {visibleSongs.map(song => {
           const isActive = song.id === activeLibrarySongId;
           return (
             <div
@@ -217,6 +253,19 @@ export const SongLibrary: React.FC<SongLibraryProps> = ({
             </div>
           );
         })}
+
+        {/* Load More Pagination / Infinite Scroll Trigger */}
+        {visibleCount < filteredSongs.length && (
+          <div className="py-2 flex items-center justify-center">
+            <button
+              type="button"
+              onClick={() => setVisibleCount((prev) => Math.min(prev + 50, filteredSongs.length))}
+              className="w-full py-2 bg-neutral-900/90 hover:bg-neutral-800 border border-neutral-800 hover:border-neutral-700 text-indigo-400 hover:text-indigo-300 rounded-xl text-[11px] font-bold transition-all flex items-center justify-center gap-1.5 shadow-sm"
+            >
+              <span>Load More ({filteredSongs.length - visibleCount} songs remaining)</span>
+            </button>
+          </div>
+        )}
 
         {filteredSongs.length === 0 && (
           <div className="py-12 flex flex-col items-center justify-center text-neutral-500 gap-2 border-2 border-dashed border-neutral-800 rounded-2xl">

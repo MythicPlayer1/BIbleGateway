@@ -13,6 +13,7 @@ import {
   type ServicePlan
 } from "@/lib/lyrics";
 import { romanToDevanagariExactMatch, nepaliToRoman } from "@/lib/transliterate";
+import { searchSongsFast } from "@/lib/songSearch/searchEngine";
 import { 
   saveScheduleMedia, getScheduleMedia, deleteMultipleScheduleMedia, deleteScheduleMedia
 } from "@/lib/mediaStorage";
@@ -1944,48 +1945,17 @@ export function useWorshipState() {
     setNewItemData(prev => ({ ...prev, countdownSeconds: total }));
   };
 
-  // Filtered Songs with Transliteration Search
+  // High-Speed Pre-Indexed Search Engine (Browses all 2,101 songs & all search results)
   const filteredSongs = useMemo(() => {
-    let result = allSongs;
-    if (selectedLetter) {
-      result = result.filter(s => {
-        const titleStr = s.title || '';
-        const titleMatch = titleStr.startsWith(selectedLetter);
-        const romanMatch = s.title_en?.toLowerCase().startsWith(selectedLetter.toLowerCase());
-        return titleMatch || romanMatch;
-      });
-    }
-    if (songSearchQuery.trim()) {
-      const q = songSearchQuery.trim().toLowerCase();
-      const devanagariSearch = romanToDevanagariExactMatch(q);
-      result = result.filter(s => {
-        const titleStr = s.title || '';
-        const rawLyricsStr = s.rawLyrics || '';
-        const titleMatch = titleStr.toLowerCase().includes(q) || (devanagariSearch && titleStr.includes(devanagariSearch));
-        const titleEnMatch = s.title_en?.toLowerCase().includes(q);
-        const lyricsMatch = rawLyricsStr.toLowerCase().includes(q) || (devanagariSearch && rawLyricsStr.includes(devanagariSearch));
-        const lyricsEnMatch = s.rawLyrics_en?.toLowerCase().includes(q);
-        const idMatch = (s.id || '').toLowerCase().includes(q);
-        return titleMatch || titleEnMatch || lyricsMatch || lyricsEnMatch || idMatch;
-      });
-    }
-    return result;
+    return searchSongsFast(allSongs, songSearchQuery, {
+      selectedLetter
+    });
   }, [allSongs, selectedLetter, songSearchQuery]);
 
   const modalFilteredSongs = useMemo(() => {
-    if (!modalSongSearch.trim()) return allSongs.slice(0, 30);
-    const q = modalSongSearch.trim().toLowerCase();
-    const devanagariSearch = romanToDevanagariExactMatch(q);
-    return allSongs.filter(s => {
-      const titleStr = s.title || '';
-      const rawLyricsStr = s.rawLyrics || '';
-      const titleMatch = titleStr.toLowerCase().includes(q) || (devanagariSearch && titleStr.includes(devanagariSearch));
-      const titleEnMatch = s.title_en?.toLowerCase().includes(q);
-      const lyricsMatch = rawLyricsStr.toLowerCase().includes(q) || (devanagariSearch && rawLyricsStr.includes(devanagariSearch));
-      const lyricsEnMatch = s.rawLyrics_en?.toLowerCase().includes(q);
-      const idMatch = (s.id || '').toLowerCase().includes(q);
-      return titleMatch || titleEnMatch || lyricsMatch || lyricsEnMatch || idMatch;
-    }).slice(0, 30);
+    return searchSongsFast(allSongs, modalSongSearch, {
+      limit: 50
+    });
   }, [allSongs, modalSongSearch]);
 
   // Live Screen Preview text calculations

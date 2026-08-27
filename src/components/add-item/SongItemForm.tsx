@@ -24,17 +24,37 @@ export const SongItemForm: React.FC<SongItemFormProps> = ({
   onOpenNewSongModal,
   onCloseModal
 }) => {
+  const [visibleCount, setVisibleCount] = React.useState(30);
+
+  React.useEffect(() => {
+    setVisibleCount(30);
+  }, [modalSongSearch, modalFilteredSongs]);
+
   React.useEffect(() => {
     if (!newItemData.songId && modalFilteredSongs.length > 0) {
       setNewItemData(prev => ({ ...prev, songId: modalFilteredSongs[0].id }));
     }
   }, [modalFilteredSongs, newItemData.songId, setNewItemData]);
 
+  const handleScroll = (e: React.UIEvent<HTMLDivElement>) => {
+    const { scrollTop, scrollHeight, clientHeight } = e.currentTarget;
+    if (scrollHeight - scrollTop - clientHeight < 60) {
+      if (visibleCount < modalFilteredSongs.length) {
+        setVisibleCount((prev) => Math.min(prev + 30, modalFilteredSongs.length));
+      }
+    }
+  };
+
+  const visibleModalSongs = React.useMemo(() => {
+    return modalFilteredSongs.slice(0, visibleCount);
+  }, [modalFilteredSongs, visibleCount]);
+
   return (
     <div className="space-y-4">
       <div>
-        <label className="block text-xs font-bold text-neutral-400 uppercase mb-1.5">
-          Search & Select from 2,101 Nepali Worship Songs
+        <label className="block text-xs font-bold text-neutral-400 uppercase mb-1.5 flex items-center justify-between">
+          <span>Search & Select from 2,101 Worship Songs</span>
+          <span className="text-[10px] text-indigo-400 font-mono">({modalFilteredSongs.length} matches)</span>
         </label>
         <div className="relative mb-2">
           <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-neutral-400" />
@@ -47,8 +67,11 @@ export const SongItemForm: React.FC<SongItemFormProps> = ({
           />
         </div>
 
-        <div className="max-h-48 overflow-y-auto space-y-1 border border-neutral-800 rounded-xl p-1 bg-neutral-900/60">
-          {modalFilteredSongs.map(song => (
+        <div 
+          onScroll={handleScroll}
+          className="max-h-48 overflow-y-auto space-y-1 border border-neutral-800 rounded-xl p-1 bg-neutral-900/60"
+        >
+          {visibleModalSongs.map(song => (
             <div
               key={song.id}
               onClick={() => setNewItemData(prev => ({ ...prev, songId: song.id }))}
@@ -65,6 +88,16 @@ export const SongItemForm: React.FC<SongItemFormProps> = ({
               {newItemData.songId === song.id && <Check size={14} className="shrink-0" />}
             </div>
           ))}
+
+          {visibleCount < modalFilteredSongs.length && (
+            <button
+              type="button"
+              onClick={() => setVisibleCount(prev => Math.min(prev + 30, modalFilteredSongs.length))}
+              className="w-full py-1.5 text-[10px] text-indigo-400 font-bold bg-neutral-900/90 hover:bg-neutral-800 rounded-lg text-center"
+            >
+              Load more ({modalFilteredSongs.length - visibleCount} remaining)
+            </button>
+          )}
         </div>
       </div>
 
