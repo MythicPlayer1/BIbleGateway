@@ -17,9 +17,17 @@ import { EditScheduleItemModal } from "@/components/EditScheduleItemModal";
 import { ServicePlansModal } from "@/components/ServicePlansModal";
 import { ConfirmModal } from "@/components/ConfirmModal";
 import { DisplaySettingsModal } from "@/components/DisplaySettingsModal";
+import { BroadcastWonderPickerModal, type BroadcastTabOption } from "@/components/BroadcastWonderPickerModal";
+import { FloatingBroadcastWidget } from "@/components/FloatingBroadcastWidget";
 
 export default function Home() {
   const state = useWorshipState();
+  const [broadcastModalTab, setBroadcastModalTab] = React.useState<BroadcastTabOption>('internet_room');
+
+  const handleOpenWonderPickerWithTab = (tab: BroadcastTabOption = 'internet_room') => {
+    setBroadcastModalTab(tab);
+    state.setIsBroadcastModalOpen(true);
+  };
 
   return (
     <div className="min-h-screen bg-neutral-950 text-neutral-100 font-sans selection:bg-indigo-500 selection:text-white flex flex-col">
@@ -69,6 +77,7 @@ export default function Home() {
               onClearAll={state.handleClearAllSchedule}
               onOpenAddItemModal={() => state.setIsAddItemModalOpen(true)}
               onOpenNewSongModal={state.handleOpenNewSongModal}
+              onEditScheduleItem={state.handleOpenEditScheduleItemModal}
               onSelectSlideIndex={state.selectSlideIndex}
               onSlideDragStart={state.handleSlideDragStart}
               onSlideDragOver={state.handleSlideDragOver}
@@ -78,7 +87,6 @@ export default function Home() {
               bgFileName={state.bgFileName}
               onBackgroundUpload={state.handleBackgroundUpload}
               onClearBackground={state.handleClearBackground}
-              onEditScheduleItem={state.handleOpenEditScheduleItemModal}
             />
           )}
 
@@ -92,16 +100,9 @@ export default function Home() {
               verses={state.verses}
               loading={state.loading}
               totalChapters={state.totalChapters}
-              onSelectBook={(id) => {
-                state.setSelectedBook(id);
-                state.setSelectedChapter(1);
-                state.setSelectedVerse(1);
-              }}
-              onSelectChapter={(c) => {
-                state.setSelectedChapter(c);
-                state.setSelectedVerse(1);
-              }}
-              onSelectVerse={(v) => state.setSelectedVerse(v)}
+              onSelectBook={state.setSelectedBook}
+              onSelectChapter={state.setSelectedChapter}
+              onSelectVerse={state.setSelectedVerse}
               onSelectTranslation={state.setBibleTranslation}
               onToggleTranslation={state.toggleBibleTranslation}
               onAddToSchedule={state.handleAddScriptureToSchedule}
@@ -145,6 +146,9 @@ export default function Home() {
           onUpdateTextAnimConfig={state.handleUpdateTextAnimConfig}
           displayConfig={state.displayConfig}
           onOpenDisplaySettingsModal={() => state.setIsDisplayModalOpen(true)}
+          isBroadcasting={state.isBroadcasting}
+          connectedClientsCount={state.connectedClients.length}
+          onOpenBroadcastModal={() => handleOpenWonderPickerWithTab('internet_room')}
           localBgUrl={state.localBgUrl}
           localBgType={state.localBgType}
           loading={state.loading}
@@ -177,7 +181,29 @@ export default function Home() {
         />
       </main>
 
+      {/* Draggable Circular Floating Broadcast Action Button (FAB) */}
+      <FloatingBroadcastWidget
+        isBroadcasting={state.isBroadcasting}
+        connectedClientsCount={state.connectedClients.length}
+        isDisplayConnected={state.isDisplayConnected}
+        onOpenWonderPicker={handleOpenWonderPickerWithTab}
+        onOpenProjector={state.handleOpenProjector}
+      />
+
       {/* Interactive Modals & Toast */}
+      <BroadcastWonderPickerModal
+        isOpen={state.isBroadcastModalOpen}
+        onClose={() => state.setIsBroadcastModalOpen(false)}
+        initialTab={broadcastModalTab}
+        isBroadcasting={state.isBroadcasting}
+        onToggleBroadcast={state.handleToggleBroadcast}
+        roomCode={state.broadcastRoomCode}
+        onChangeRoomCode={state.handleChangeBroadcastRoomCode}
+        connectedClients={state.connectedClients}
+        isDisplayConnected={state.isDisplayConnected}
+        onOpenProjector={state.handleOpenProjector}
+      />
+
       <BackgroundStudioModal
         isOpen={state.isBgStudioModalOpen}
         onClose={() => state.setIsBgStudioModalOpen(false)}

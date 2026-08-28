@@ -186,7 +186,7 @@ export const SongLibrary: React.FC<SongLibraryProps> = ({
           }`}
         >
           <Music size={13} />
-          <span>🎵 Modern & Chorus</span>
+          <span>🎵 Chorus (कोरस)</span>
         </button>
 
         <button
@@ -236,7 +236,7 @@ export const SongLibrary: React.FC<SongLibraryProps> = ({
               type="text"
               value={artistSearchTerm}
               onChange={(e) => setArtistSearchTerm(e.target.value)}
-              placeholder="Filter artist name (e.g. 'Michael Tamang', 'Adrian Dewan', 'Rohit Thapa')..."
+              placeholder="Filter artist name (e.g. 'Adrian Dewan', 'Rohit Thapa', 'Deborah Singh')..."
               className="w-full bg-neutral-950 border border-neutral-800 rounded-xl pl-8 pr-3 py-1.5 text-xs text-white placeholder-neutral-500 outline-none focus:border-violet-500"
             />
           </div>
@@ -271,7 +271,7 @@ export const SongLibrary: React.FC<SongLibraryProps> = ({
           type="text"
           value={songSearchQuery}
           onChange={(e) => setSongSearchQuery(e.target.value)}
-          placeholder="खोज्नुहोस् / Type Roman Nepali, Devanagari, or Bhajan number (e.g. 'mero hridayale', '509', 'dhanyabad')..."
+          placeholder="खोज्नुहोस् / Search Roman, Devanagari, Bhajan or Chorus # (e.g. '509', 'c188', 'b188', 'येशू')..."
           className="w-full bg-neutral-900/90 border border-neutral-700 rounded-2xl pl-10 pr-10 py-3 text-xs text-white placeholder-neutral-500 focus:ring-2 focus:ring-indigo-500 outline-none shadow-inner"
         />
         {songSearchQuery && (
@@ -309,6 +309,7 @@ export const SongLibrary: React.FC<SongLibraryProps> = ({
         {visibleSongs.map(song => {
           const isActive = song.id === activeLibrarySongId;
           const isBhajan = song.category === 'bhajan' || Boolean(song.songNumber && String(song.id).startsWith('bhajan-'));
+          const isChorus = song.category === 'chorus' || Boolean(String(song.id).startsWith('chorus-'));
           
           return (
             <div
@@ -330,13 +331,18 @@ export const SongLibrary: React.FC<SongLibraryProps> = ({
                       <BookOpen size={9} />
                       <span>Bhajan #{song.songNumber}</span>
                     </span>
-                  ) : song.artist && song.artist !== 'Bhajan' && song.artist !== 'Unknown Artist' ? (
+                  ) : isChorus ? (
+                    <span className="px-2 py-0.5 bg-emerald-950/70 text-emerald-300 border border-emerald-600/40 rounded-md text-[9px] font-bold shrink-0 flex items-center gap-1">
+                      <Music size={9} />
+                      <span>Chorus {song.songNumber ? `#${song.songNumber}` : ''}</span>
+                    </span>
+                  ) : song.artist && song.artist !== 'Bhajan' && song.artist !== 'Chorus' && song.artist !== 'Unknown Artist' ? (
                     <span className="px-2 py-0.5 bg-violet-950/70 text-violet-300 border border-violet-600/40 rounded-md text-[9px] font-semibold shrink-0 flex items-center gap-1">
                       <Mic2 size={9} />
                       <span>{song.artist}</span>
                     </span>
                   ) : Boolean(song.isCustom || song.id.startsWith('custom-song-')) ? (
-                    <span className="px-2 py-0.5 bg-emerald-950/80 text-emerald-400 border border-emerald-500/40 rounded-md text-[9px] font-bold shrink-0">
+                    <span className="px-2 py-0.5 bg-cyan-950/80 text-cyan-400 border border-cyan-500/40 rounded-md text-[9px] font-bold shrink-0">
                       Custom
                     </span>
                   ) : null}
@@ -448,6 +454,11 @@ export const SongLibrary: React.FC<SongLibraryProps> = ({
                 {activeLibrarySong.category === 'bhajan' && (
                   <span className="px-2 py-0.5 bg-amber-950 text-amber-300 border border-amber-600/40 rounded text-[9px] font-bold">
                     Bhajan #{activeLibrarySong.songNumber}
+                  </span>
+                )}
+                {activeLibrarySong.category === 'chorus' && (
+                  <span className="px-2 py-0.5 bg-emerald-950 text-emerald-300 border border-emerald-600/40 rounded text-[9px] font-bold">
+                    Chorus #{activeLibrarySong.songNumber}
                   </span>
                 )}
                 {activeLibrarySong.mainChords && (

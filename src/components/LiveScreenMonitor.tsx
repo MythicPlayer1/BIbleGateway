@@ -5,7 +5,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import {
   MonitorPlay, Maximize2, Film, Image as ImageIcon,
   Play, Pause, RotateCcw, QrCode, Sparkles, ChevronLeft, ChevronRight,
-  Volume2, VolumeX, Wand2, Sliders, Globe, Presentation
+  Volume2, VolumeX, Wand2, Sliders, Globe, Presentation, Radio
 } from "lucide-react";
 import type {
   ScheduleItem, GlobalBackgroundConfig, TextAnimationConfig, TextAnimationEffect, TextAnimationSpeed,
@@ -45,6 +45,9 @@ interface LiveScreenMonitorProps {
   onUpdateTextAnimConfig?: (config: TextAnimationConfig) => void;
   displayConfig?: ProjectorDisplayConfig;
   onOpenDisplaySettingsModal?: () => void;
+  isBroadcasting?: boolean;
+  connectedClientsCount?: number;
+  onOpenBroadcastModal?: () => void;
   localBgUrl: string | null;
   localBgType: 'video' | 'image' | null;
   loading: boolean;
@@ -82,6 +85,9 @@ export const LiveScreenMonitor: React.FC<LiveScreenMonitorProps> = ({
   onUpdateTextAnimConfig,
   displayConfig = DEFAULT_DISPLAY_CONFIG,
   onOpenDisplaySettingsModal,
+  isBroadcasting = false,
+  connectedClientsCount = 0,
+  onOpenBroadcastModal,
   localBgUrl,
   localBgType,
   loading,
@@ -120,7 +126,7 @@ export const LiveScreenMonitor: React.FC<LiveScreenMonitorProps> = ({
     vid.muted = !!isDisplayConnected || !!isVideoMuted;
   }, [isDisplayConnected, isVideoMuted]);
 
-  // Imperatively sync play/pause
+  // Imperatively sync play/pause on preview video
   React.useEffect(() => {
     const vid = previewVideoRef.current;
     if (!vid) return;
@@ -146,6 +152,22 @@ export const LiveScreenMonitor: React.FC<LiveScreenMonitorProps> = ({
           </div>
 
           <div className="flex items-center gap-2.5">
+            {onOpenBroadcastModal && (
+              <button
+                type="button"
+                onClick={onOpenBroadcastModal}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl border text-xs font-bold transition-all shadow-sm ${
+                  isBroadcasting
+                    ? "bg-emerald-950/90 text-emerald-300 border-emerald-500/50 hover:bg-emerald-900 shadow-emerald-900/20"
+                    : "bg-neutral-800 hover:bg-neutral-700 text-neutral-200 hover:text-white border-neutral-700"
+                }`}
+                title="Broadcast projector feed online to TVs, iPads, and OBS"
+              >
+                <Radio size={13} className={isBroadcasting ? "text-emerald-400 animate-pulse" : "text-neutral-400"} />
+                <span>{isBroadcasting ? `ON AIR (${connectedClientsCount})` : "Broadcast"}</span>
+              </button>
+            )}
+
             {onOpenDisplaySettingsModal && (
               <button
                 type="button"

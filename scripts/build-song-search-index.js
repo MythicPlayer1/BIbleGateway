@@ -31,6 +31,11 @@ const CONSONANT_MAP = {
 
 const VIRAMA = "्";
 
+const NUM_MAP = {
+  "0": "०", "1": "१", "2": "२", "3": "३", "4": "४",
+  "5": "५", "6": "६", "7": "७", "8": "८", "9": "९"
+};
+
 const NATURAL_WORD_REPLACEMENTS = [
   [/तपाईंलाई|तपाइलाई|तपाईलाई/g, "tapailai"],
   [/तपाईं|तपाइ/g, "tapaai"],
@@ -201,10 +206,29 @@ function buildIndex() {
     const hymnalAliases = extractHymnalAliases(song.details, song.id);
 
     if (song.songNumber) {
-      hymnalAliases.push(`bhajan ${song.songNumber}`);
-      hymnalAliases.push(`bhajan #${song.songNumber}`);
-      hymnalAliases.push(`b${song.songNumber}`);
-      hymnalAliases.push(String(song.songNumber));
+      const nepNum = String(song.songNumber).split("").map(d => NUM_MAP[d] || d).join("");
+      if (song.category === 'chorus') {
+        hymnalAliases.push(`chorus ${song.songNumber}`);
+        hymnalAliases.push(`chorus #${song.songNumber}`);
+        hymnalAliases.push(`c${song.songNumber}`);
+        hymnalAliases.push(`c ${song.songNumber}`);
+        hymnalAliases.push(`कोरस ${song.songNumber}`);
+        hymnalAliases.push(`कोरस ${nepNum}`);
+        hymnalAliases.push(String(song.songNumber));
+        hymnalAliases.push(nepNum);
+      } else if (song.category === 'bhajan') {
+        hymnalAliases.push(`bhajan ${song.songNumber}`);
+        hymnalAliases.push(`bhajan #${song.songNumber}`);
+        hymnalAliases.push(`b${song.songNumber}`);
+        hymnalAliases.push(`b ${song.songNumber}`);
+        hymnalAliases.push(`भजन ${song.songNumber}`);
+        hymnalAliases.push(`भजन ${nepNum}`);
+        hymnalAliases.push(String(song.songNumber));
+        hymnalAliases.push(nepNum);
+      } else {
+        hymnalAliases.push(String(song.songNumber));
+        hymnalAliases.push(nepNum);
+      }
     }
 
     if (artistStr) {

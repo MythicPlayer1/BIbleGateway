@@ -124,7 +124,9 @@ class SongSearchEngine {
       if (options.selectedCategory && options.selectedCategory !== "all") {
         if (options.selectedCategory === "bhajan" && item.category !== "bhajan") return false;
         if (options.selectedCategory === "chorus" && item.category !== "chorus") return false;
-        if (options.selectedCategory === "artist" && item.category !== "artist") return false;
+        if (options.selectedCategory === "artist") {
+          if (!item.artist || item.artist === "Bhajan" || item.artist === "Unknown Artist") return false;
+        }
         if (options.selectedCategory === "custom" && item.category !== "custom" && !item.id.startsWith("custom-song-")) return false;
       }
       if (options.selectedArtist && item.artist !== options.selectedArtist) {

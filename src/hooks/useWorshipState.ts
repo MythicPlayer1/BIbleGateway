@@ -20,6 +20,7 @@ import {
 } from "@/lib/mediaStorage";
 import type { NewItemDataState } from "@/components/AddItemModal";
 import { useWorshipStore, initialSongsLibrary } from "@/store/useWorshipStore";
+import { HostBroadcaster, type ConnectedClientInfo } from "@/lib/broadcastSync";
 
 export function useWorshipState() {
   const {
@@ -113,6 +114,144 @@ export function useWorshipState() {
     if (toastTimeoutRef.current) clearTimeout(toastTimeoutRef.current);
     setToastMessage(msg);
     toastTimeoutRef.current = setTimeout(() => setToastMessage(null), 3000);
+  };
+
+  // Online WebRTC Remote Broadcasting State
+  const [isBroadcasting, setIsBroadcasting] = useState<boolean>(() => {
+    if (typeof window !== 'undefined') {
+      return localStorage.getItem('worship_is_broadcasting') === 'true';
+    }
+    return false;
+  });
+  const [broadcastRoomCode, setBroadcastRoomCode] = useState<string>(() => {
+    if (typeof window !== 'undefined') {
+      return localStorage.getItem('worship_broadcast_room') || 'sunday-worship';
+    }
+    return 'sunday-worship';
+  });
+  const [connectedClients, setConnectedClients] = useState<ConnectedClientInfo[]>([]);
+  const [isBroadcastModalOpen, setIsBroadcastModalOpen] = useState(false);
+  const hostBroadcasterRef = useRef<HostBroadcaster | null>(null);
+
+  const handleToggleBroadcast = (enabled: boolean) => {
+    setIsBroadcasting(enabled);
+    try {
+      localStorage.setItem('worship_is_broadcasting', String(enabled));
+    } catch {}
+    if (enabled) {
+      showToast(`Online Broadcast Started: Room "${broadcastRoomCode}"`);
+    } else {
+      showToast("Online Broadcast Stopped");
+    }
+  };
+
+  const handleChangeBroadcastRoomCode = (newRoom: string) => {
+    const clean = newRoom.trim().toLowerCase().replace(/[^a-z0-9_-]/g, "-");
+    if (!clean) return;
+    setBroadcastRoomCode(clean);
+    try {
+      localStorage.setItem('worship_broadcast_room', clean);
+    } catch {}
+    showToast(`Room code set to "${clean}"`);
+  };
+
+  // WebRTC Host Broadcaster Lifecycle
+  useEffect(() => {
+    if (!isBroadcasting) {
+      if (hostBroadcasterRef.current) {
+        hostBroadcasterRef.current.destroy();
+        hostBroadcasterRef.current = null;
+      }
+      setConnectedClients([]);
+      return;
+    }
+
+    const host = new HostBroadcaster(broadcastRoomCode, {
+      onClientsChange: (clients) => {
+        setConnectedClients(clients);
+      },
+      onMessageReceived: async (msg, conn) => {
+        if (msg.type === 'REQUEST_INIT_STATE') {
+          let hydratedBgConfig = globalBgConfigRef.current ? { ...globalBgConfigRef.current } : null;
+
+          if (hydratedBgConfig?.slideshow?.images) {
+            const loadedImages = await Promise.all(
+              hydratedBgConfig.slideshow.images.map(async (img) => {
+                if (img.buffer) return img;
+                const rec = await getScheduleMedia(img.id);
+                if (rec && rec.buffer) {
+                  return {
+                    ...img,
+                    buffer: rec.buffer,
+                    mime: rec.mime
+                  };
+                }
+                return img;
+              })
+            );
+            hydratedBgConfig.slideshow = {
+              ...hydratedBgConfig.slideshow,
+              images: loadedImages
+            };
+          }
+
+          if (hydratedBgConfig?.mode === 'video') {
+            if (!hydratedBgConfig.video?.buffer) {
+              const rec = await getScheduleMedia('bg_global_video');
+              if (rec && rec.buffer) {
+                hydratedBgConfig.video = {
+                  name: rec.fileName,
+                  buffer: rec.buffer,
+                  mime: rec.mime,
+                  url: ''
+                };
+              }
+            }
+          }
+
+          let hydratedMediaSlide = currentMediaSlideRef.current ? { ...currentMediaSlideRef.current } : null;
+
+          const snapshot = {
+            type: 'INIT_STATE_RESPONSE',
+            verse: currentContentRef.current,
+            mediaSlide: hydratedMediaSlide,
+            bgConfig: hydratedBgConfig,
+            ticker: tickerConfigRef.current,
+            textAnim: textAnimConfigRef.current,
+            displayConfig: displayConfigRef.current,
+            isTextHidden: isTextHiddenRef.current,
+            countdownLeft: countdownLeft,
+            countdownRunning: isCountdownRunning
+          };
+          host.sendTo(conn, snapshot);
+        }
+      },
+      onError: (err) => {
+        if (err.type === 'unavailable-id') {
+          showToast(`⚠️ Room "${broadcastRoomCode}" is already in use by another tab or host. Try another name.`);
+        }
+      }
+    });
+
+    hostBroadcasterRef.current = host;
+
+    return () => {
+      host.destroy();
+      hostBroadcasterRef.current = null;
+    };
+  }, [isBroadcasting, broadcastRoomCode]);
+
+  const broadcastToProjector = (payload: any) => {
+    if (channelRef.current) {
+      try {
+        channelRef.current.postMessage(payload);
+      } catch {}
+    }
+    if (hostBroadcasterRef.current) {
+      try {
+        hostBroadcasterRef.current.broadcast(payload);
+      } catch {}
+    }
   };
 
   // Broadcast Channel Initialization
@@ -654,9 +793,7 @@ export function useWorshipState() {
   const toggleMediaPlayPause = () => {
     setIsVideoPlaying(prev => {
       const next = !prev;
-      if (channelRef.current) {
-        channelRef.current.postMessage({ type: 'MEDIA_PLAY_PAUSE', playing: next });
-      }
+      broadcastToProjector({ type: 'MEDIA_PLAY_PAUSE', playing: next });
       return next;
     });
   };
@@ -664,9 +801,7 @@ export function useWorshipState() {
   const toggleMediaMute = () => {
     setIsVideoMuted(prev => {
       const next = !prev;
-      if (channelRef.current) {
-        channelRef.current.postMessage({ type: 'MEDIA_MUTE_UNMUTE', muted: next });
-      }
+      broadcastToProjector({ type: 'MEDIA_MUTE_UNMUTE', muted: next });
       return next;
     });
   };
@@ -693,13 +828,11 @@ export function useWorshipState() {
   }, [isCountdownRunning]);
 
   useEffect(() => {
-    if (channelRef.current) {
-      channelRef.current.postMessage({
-        type: 'SET_COUNTDOWN_SYNC',
-        secondsLeft: countdownLeft,
-        isRunning: isCountdownRunning
-      });
-    }
+    broadcastToProjector({
+      type: 'SET_COUNTDOWN_SYNC',
+      secondsLeft: countdownLeft,
+      isRunning: isCountdownRunning
+    });
   }, [isCountdownRunning, countdownLeft]);
 
   useEffect(() => {
@@ -707,13 +840,11 @@ export function useWorshipState() {
       const initialSecs = activeScheduleItem?.theme?.countdownSeconds ?? (activeScheduleItem as any)?.countdownSeconds ?? 300;
       setCountdownLeft(initialSecs);
       setIsCountdownRunning(false);
-      if (channelRef.current) {
-        channelRef.current.postMessage({
-          type: 'SET_COUNTDOWN_SYNC',
-          secondsLeft: initialSecs,
-          isRunning: false
-        });
-      }
+      broadcastToProjector({
+        type: 'SET_COUNTDOWN_SYNC',
+        secondsLeft: initialSecs,
+        isRunning: false
+      });
     }
   }, [activeScheduleItem?.id, activeScheduleItem?.theme?.countdownSeconds]);
 
@@ -721,12 +852,10 @@ export function useWorshipState() {
   useEffect(() => {
     if (appMode === 'bible') {
       currentMediaSlideRef.current = null;
-      if (channelRef.current) {
-        channelRef.current.postMessage({ type: 'CLEAR_MEDIA_SLIDE' });
-      }
+      broadcastToProjector({ type: 'CLEAR_MEDIA_SLIDE' });
       if (verses.length > 0) {
         const verseData = verses.find(v => v.verseNumber === selectedVerse);
-        if (verseData && channelRef.current) {
+        if (verseData) {
           const bookName = books.find(b => b.id === selectedBook)?.name;
           const payload = {
             text: verseData.text,
@@ -736,7 +865,7 @@ export function useWorshipState() {
             accentColor: 'indigo' as const
           };
           currentContentRef.current = payload;
-          channelRef.current.postMessage({ type: 'SET_VERSE', ...payload });
+          broadcastToProjector({ type: 'SET_VERSE', ...payload });
           try {
             localStorage.setItem('worship_live_projector_state', JSON.stringify({
               type: 'verse',
@@ -751,17 +880,15 @@ export function useWorshipState() {
       if (!activeScheduleItem || scheduleItems.length === 0) {
         currentMediaSlideRef.current = null;
         currentContentRef.current = null;
-        if (channelRef.current) {
-          channelRef.current.postMessage({
-            type: 'SET_VERSE',
-            text: '',
-            reference: '',
-            title: '',
-            subtitle: '',
-            layout: 'standard'
-          });
-          channelRef.current.postMessage({ type: 'CLEAR_MEDIA_SLIDE' });
-        }
+        broadcastToProjector({
+          type: 'SET_VERSE',
+          text: '',
+          reference: '',
+          title: '',
+          subtitle: '',
+          layout: 'standard'
+        });
+        broadcastToProjector({ type: 'CLEAR_MEDIA_SLIDE' });
         try {
           localStorage.setItem('worship_live_projector_state', JSON.stringify({
             type: 'verse',
@@ -792,15 +919,13 @@ export function useWorshipState() {
           };
           currentMediaSlideRef.current = mediaPayload;
           currentContentRef.current = null;
-          if (channelRef.current) {
-            channelRef.current.postMessage({
-              type: 'SET_MEDIA_SLIDE',
-              ...mediaPayload
-            });
-            // Reset to playing by default for new media slides
-            setIsVideoPlaying(true);
-            channelRef.current.postMessage({ type: 'MEDIA_PLAY_PAUSE', playing: true });
-          }
+          broadcastToProjector({
+            type: 'SET_MEDIA_SLIDE',
+            ...mediaPayload
+          });
+          // Reset to playing by default for new media slides
+          setIsVideoPlaying(true);
+          broadcastToProjector({ type: 'MEDIA_PLAY_PAUSE', playing: true });
           try {
             localStorage.setItem('worship_live_projector_state', JSON.stringify({
               type: 'media',
@@ -834,12 +959,10 @@ export function useWorshipState() {
         };
         currentMediaSlideRef.current = mediaPayload;
         currentContentRef.current = null;
-        if (channelRef.current) {
-          channelRef.current.postMessage({
-            type: 'SET_MEDIA_SLIDE',
-            ...mediaPayload
-          });
-        }
+        broadcastToProjector({
+          type: 'SET_MEDIA_SLIDE',
+          ...mediaPayload
+        });
         try {
           localStorage.setItem('worship_live_projector_state', JSON.stringify({
             type: 'media',
@@ -852,9 +975,7 @@ export function useWorshipState() {
         } catch (e) {}
       } else if (activeScheduleItem?.type === 'web_embed') {
         currentMediaSlideRef.current = null;
-        if (channelRef.current) {
-          channelRef.current.postMessage({ type: 'CLEAR_MEDIA_SLIDE' });
-        }
+        broadcastToProjector({ type: 'CLEAR_MEDIA_SLIDE' });
         const payload = {
           text: '',
           reference: '',
@@ -867,12 +988,10 @@ export function useWorshipState() {
           embedType: activeScheduleItem.embedType || 'generic'
         };
         currentContentRef.current = payload;
-        if (channelRef.current) {
-          channelRef.current.postMessage({
-            type: 'SET_VERSE',
-            ...payload
-          });
-        }
+        broadcastToProjector({
+          type: 'SET_VERSE',
+          ...payload
+        });
         try {
           localStorage.setItem('worship_live_projector_state', JSON.stringify({
             type: 'verse',
@@ -883,21 +1002,19 @@ export function useWorshipState() {
         } catch (e) {}
       } else if (activeSlides.length > 0) {
         currentMediaSlideRef.current = null;
-        if (channelRef.current) {
-          channelRef.current.postMessage({ type: 'CLEAR_MEDIA_SLIDE' });
-        }
+        broadcastToProjector({ type: 'CLEAR_MEDIA_SLIDE' });
         const currentSlide = activeSlides[selectedSlideIndex] || activeSlides[0];
-        if (currentSlide && channelRef.current) {
-          const reference = activeScheduleItem?.type === 'song'
-            ? `${activeScheduleItem.title} (${currentSlide.section})`
-            : activeScheduleItem?.subtitle || activeScheduleItem?.title || '';
+        if (currentSlide) {
+          const reference = activeScheduleItem?.type === 'scripture'
+            ? ((currentSlide as any).slideCitation || activeScheduleItem.title)
+            : '';
 
           const theme = activeScheduleItem?.theme || (currentSlide as any).theme || {};
           const payload = {
             text: currentSlide.text,
             reference,
             title: activeScheduleItem?.title || (currentSlide as any).title,
-            subtitle: activeScheduleItem?.subtitle || (currentSlide as any).subtitle,
+            subtitle: '',
             layout: theme.layout || 'standard',
             textAlign: theme.textAlign || 'center',
             accentColor: theme.accentColor || 'indigo',
@@ -911,7 +1028,7 @@ export function useWorshipState() {
             countdownLabel: theme.countdownLabel || 'Service Begins In'
           };
           currentContentRef.current = payload;
-          channelRef.current.postMessage({
+          broadcastToProjector({
             type: 'SET_VERSE',
             ...payload
           });
@@ -927,23 +1044,21 @@ export function useWorshipState() {
       }
     } else if (appMode === 'lyrics') {
       currentMediaSlideRef.current = null;
-      if (channelRef.current) {
-        channelRef.current.postMessage({ type: 'CLEAR_MEDIA_SLIDE' });
-      }
+      broadcastToProjector({ type: 'CLEAR_MEDIA_SLIDE' });
       if (activeLibrarySong && activeSlides.length > 0) {
         const currentSlide = activeSlides[selectedSlideIndex] || activeSlides[0];
-        if (currentSlide && channelRef.current) {
+        if (currentSlide) {
           const payload = {
             text: currentSlide.text,
-            reference: `${activeLibrarySong.title} (${currentSlide.section})`,
+            reference: '',
             title: activeLibrarySong.title,
-            subtitle: activeLibrarySong.title_en || activeLibrarySong.artist || 'Worship Song',
+            subtitle: '',
             layout: 'standard' as const,
             textAlign: 'center' as const,
             accentColor: 'indigo' as const
           };
           currentContentRef.current = payload;
-          channelRef.current.postMessage({
+          broadcastToProjector({
             type: 'SET_VERSE',
             ...payload
           });
@@ -978,12 +1093,10 @@ export function useWorshipState() {
 
   const handleUpdateDisplayConfig = (config: ProjectorDisplayConfig) => {
     setDisplayConfig(config);
-    if (channelRef.current) {
-      channelRef.current.postMessage({
-        type: 'DISPLAY_CONFIG_SYNC',
-        config
-      });
-    }
+    broadcastToProjector({
+      type: 'DISPLAY_CONFIG_SYNC',
+      config
+    });
     try {
       localStorage.setItem('worship_display_config', JSON.stringify(config));
     } catch {}
@@ -1119,63 +1232,63 @@ export function useWorshipState() {
     const updated = { ...tickerConfig, text };
     setTickerConfig(updated);
     try { localStorage.setItem('worship_ticker_config', JSON.stringify(updated)); } catch (e) {}
-    if (channelRef.current) channelRef.current.postMessage({ type: 'SET_TICKER', config: updated });
+    broadcastToProjector({ type: 'SET_TICKER', config: updated });
   };
 
   const handleUpdateTickerBadge = (badgeLabel: string) => {
     const updated = { ...tickerConfig, badgeLabel };
     setTickerConfig(updated);
     try { localStorage.setItem('worship_ticker_config', JSON.stringify(updated)); } catch (e) {}
-    if (channelRef.current) channelRef.current.postMessage({ type: 'SET_TICKER', config: updated });
+    broadcastToProjector({ type: 'SET_TICKER', config: updated });
   };
 
   const handleToggleTickerBadge = () => {
     const updated = { ...tickerConfig, showBadge: !tickerConfig.showBadge };
     setTickerConfig(updated);
     try { localStorage.setItem('worship_ticker_config', JSON.stringify(updated)); } catch (e) {}
-    if (channelRef.current) channelRef.current.postMessage({ type: 'SET_TICKER', config: updated });
+    broadcastToProjector({ type: 'SET_TICKER', config: updated });
   };
 
   const handleUpdateTickerTheme = (theme: TickerTheme) => {
     const updated = { ...tickerConfig, theme };
     setTickerConfig(updated);
     try { localStorage.setItem('worship_ticker_config', JSON.stringify(updated)); } catch (e) {}
-    if (channelRef.current) channelRef.current.postMessage({ type: 'SET_TICKER', config: updated });
+    broadcastToProjector({ type: 'SET_TICKER', config: updated });
   };
 
   const handleUpdateTickerPosition = (position: 'bottom' | 'top') => {
     const updated = { ...tickerConfig, position };
     setTickerConfig(updated);
     try { localStorage.setItem('worship_ticker_config', JSON.stringify(updated)); } catch (e) {}
-    if (channelRef.current) channelRef.current.postMessage({ type: 'SET_TICKER', config: updated });
+    broadcastToProjector({ type: 'SET_TICKER', config: updated });
   };
 
   const handleUpdateTickerSpeed = (speed: TickerSpeed) => {
     const updated = { ...tickerConfig, speed };
     setTickerConfig(updated);
     try { localStorage.setItem('worship_ticker_config', JSON.stringify(updated)); } catch (e) {}
-    if (channelRef.current) channelRef.current.postMessage({ type: 'SET_TICKER', config: updated });
+    broadcastToProjector({ type: 'SET_TICKER', config: updated });
   };
 
   const handleUpdateTickerFontSize = (fontSize: TickerFontSize) => {
     const updated = { ...tickerConfig, fontSize };
     setTickerConfig(updated);
     try { localStorage.setItem('worship_ticker_config', JSON.stringify(updated)); } catch (e) {}
-    if (channelRef.current) channelRef.current.postMessage({ type: 'SET_TICKER', config: updated });
+    broadcastToProjector({ type: 'SET_TICKER', config: updated });
   };
 
   const handleApplyTickerPreset = (preset: typeof QUICK_TICKER_PRESETS[0]) => {
     const updated = { ...tickerConfig, text: preset.text, badgeLabel: preset.badge };
     setTickerConfig(updated);
     try { localStorage.setItem('worship_ticker_config', JSON.stringify(updated)); } catch (e) {}
-    if (channelRef.current) channelRef.current.postMessage({ type: 'SET_TICKER', config: updated });
+    broadcastToProjector({ type: 'SET_TICKER', config: updated });
   };
 
   const handleToggleTicker = () => {
     const updated = { ...tickerConfig, enabled: !tickerConfig.enabled };
     setTickerConfig(updated);
     try { localStorage.setItem('worship_ticker_config', JSON.stringify(updated)); } catch (e) {}
-    if (channelRef.current) channelRef.current.postMessage({ type: 'SET_TICKER', config: updated });
+    broadcastToProjector({ type: 'SET_TICKER', config: updated });
   };
 
   // Schedule Delete Handlers
@@ -1187,17 +1300,15 @@ export function useWorshipState() {
     if (selectedItemId === id) {
       const nextSelectedId = updated[0]?.id || "";
       updateScheduleAndPersist(updated, nextSelectedId, 0);
-      if (channelRef.current) {
-        channelRef.current.postMessage({ type: 'CLEAR_MEDIA_SLIDE' });
-        channelRef.current.postMessage({
-          type: 'SET_VERSE',
-          text: '',
-          reference: '',
-          title: '',
-          subtitle: '',
-          layout: 'standard'
-        });
-      }
+      broadcastToProjector({ type: 'CLEAR_MEDIA_SLIDE' });
+      broadcastToProjector({
+        type: 'SET_VERSE',
+        text: '',
+        reference: '',
+        title: '',
+        subtitle: '',
+        layout: 'standard'
+      });
     } else {
       updateScheduleAndPersist(updated);
     }
@@ -1893,12 +2004,10 @@ export function useWorshipState() {
       };
       localStorage.setItem('worship_global_bg_config', JSON.stringify(sanitized));
     } catch (e) {}
-    if (channelRef.current) {
-      channelRef.current.postMessage({
-        type: 'SET_BG_CONFIG',
-        config: newConfig
-      });
-    }
+    broadcastToProjector({
+      type: 'SET_BG_CONFIG',
+      config: newConfig
+    });
   };
 
   const handleAddSlideshowImages = async (files: FileList) => {
@@ -2000,9 +2109,7 @@ export function useWorshipState() {
       mode: 'none'
     };
     updateGlobalBgConfig(newConfig);
-    if (channelRef.current) {
-      channelRef.current.postMessage({ type: 'CLEAR_BG' });
-    }
+    broadcastToProjector({ type: 'CLEAR_BG' });
     showToast("Projector background turned off");
   };
 
@@ -2078,22 +2185,20 @@ export function useWorshipState() {
   const currentPreviewReference = appMode === 'bible'
     ? `${books.find(b => b.id === selectedBook)?.name} ${selectedChapter}:${selectedVerse}${currentTransBadge}`
     : appMode === 'schedule'
-      ? activeScheduleItem?.type === 'song'
-        ? `${activeScheduleItem.title} (${activeSlides[selectedSlideIndex]?.section || 'Lyrics'})`
-        : activeScheduleItem?.subtitle || activeScheduleItem?.title || ''
-      : `${activeLibrarySong?.title || ''} (${activeSlides[selectedSlideIndex]?.section || 'Lyrics'})`;
+      ? activeScheduleItem?.type === 'scripture'
+        ? ((activeSlides[selectedSlideIndex] as any)?.slideCitation || activeScheduleItem.title)
+        : ''
+      : '';
 
   const handleUpdateTextAnimConfig = (newConfig: TextAnimationConfig) => {
     setTextAnimConfig(newConfig);
     try {
       localStorage.setItem('worship_text_anim_config', JSON.stringify(newConfig));
     } catch (e) {}
-    if (channelRef.current) {
-      channelRef.current.postMessage({
-        type: 'SET_TEXT_ANIMATION',
-        config: newConfig
-      });
-    }
+    broadcastToProjector({
+      type: 'SET_TEXT_ANIMATION',
+      config: newConfig
+    });
   };
 
   return {
@@ -2251,6 +2356,13 @@ export function useWorshipState() {
     currentActiveMediaType,
     currentActiveMediaTitle,
     currentPreviewText,
-    currentPreviewReference
+    currentPreviewReference,
+    isBroadcasting,
+    broadcastRoomCode,
+    connectedClients,
+    isBroadcastModalOpen,
+    setIsBroadcastModalOpen,
+    handleToggleBroadcast,
+    handleChangeBroadcastRoomCode
   };
 }

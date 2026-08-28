@@ -1,6 +1,6 @@
 /**
  * Conversion Script: Migrates from all_nepali_christian_lyrics.json
- * to unified nepali_christian_songs.json with full Bhajan, Chorus, and Artist metadata.
+ * to unified nepali_christian_songs.json with full Bhajan (848), Chorus (336), and Modern Artist Songs (714).
  */
 
 const fs = require("fs");
@@ -96,6 +96,7 @@ function convertDataset() {
   const convertedSongs = [];
 
   // 2. Convert Bhajans (848 items)
+  let bhajanCount = 0;
   if (rawData.bhajans && Array.isArray(rawData.bhajans)) {
     rawData.bhajans.forEach((b, idx) => {
       const bhajanNum = b.songNumber || (idx + 1);
@@ -138,13 +139,62 @@ function convertDataset() {
         isDefault: true,
         isCustom: false
       });
+      bhajanCount++;
     });
   }
+  console.log(`📖 Converted Bhajans: ${bhajanCount}`);
 
-  console.log(`📖 Converted Bhajans: ${convertedSongs.length}`);
-  const bhajanCount = convertedSongs.length;
+  // 3. Convert Choruses (336 items)
+  let chorusCount = 0;
+  if (rawData.choruses && Array.isArray(rawData.choruses)) {
+    rawData.choruses.forEach((c, idx) => {
+      const chorusNum = c.songNumber || (idx + 1);
+      const chorusNumNepali = toNepaliDigits(chorusNum);
+      const firstLineNepali = extractFirstMeaningfulNepaliLine(c.nepaliLyrics);
 
-  // 3. Convert Songs & Choruses (714 items)
+      const rawNameClean = (c.name || "").replace(/\r/g, "").trim();
+      const titleEn = rawNameClean
+        ? `${toTitleCase(rawNameClean)} (Chorus ${chorusNum})`
+        : `Chorus ${chorusNum}`;
+
+      const titleNepali = firstLineNepali
+        ? `${firstLineNepali} (कोरस ${chorusNumNepali})`
+        : (rawNameClean ? `${rawNameClean} (कोरस ${chorusNumNepali})` : `कोरस ${chorusNumNepali}`);
+
+      const cleanLyrics = cleanLyricsText(c.nepaliLyrics || "");
+      const cleanTranslit = cleanLyricsText(c.translitLyrics || c.romanLyrics || "");
+
+      const detailsParts = [`Chorus #${chorusNum}`];
+      if (c.mainChords) detailsParts.push(`Key: ${c.mainChords}`);
+      if (c.beat) detailsParts.push(`Beat: ${c.beat}`);
+
+      convertedSongs.push({
+        id: `chorus-${chorusNum}`,
+        title: titleNepali,
+        title_en: titleEn,
+        artist: "Chorus",
+        authors: `[कोरस #${chorusNumNepali}]`,
+        details: `[${detailsParts.join(", ")}]`,
+        letter: determineNepaliLetter(titleNepali, titleEn),
+        category: "chorus",
+        songNumber: chorusNum,
+        mainChords: c.mainChords || undefined,
+        beat: c.beat || undefined,
+        audioUrl: c.audioUrl || undefined,
+        videoUrl: c.videoUrl || undefined,
+        rawLyrics: cleanLyrics || c.nepaliLyrics || "",
+        chordsLyrics: c.nepaliLyrics || "",
+        rawLyrics_en: cleanTranslit || undefined,
+        isDefault: true,
+        isCustom: false
+      });
+      chorusCount++;
+    });
+  }
+  console.log(`🎵 Converted Choruses: ${chorusCount}`);
+
+  // 4. Convert Modern Songs by Artists (714 items)
+  let modernSongCount = 0;
   if (rawData.songs && Array.isArray(rawData.songs)) {
     rawData.songs.forEach((s, idx) => {
       const artistName = artistMap.get(s.artist) || "Unknown Artist";
@@ -155,9 +205,6 @@ function convertDataset() {
       const titleNepali = firstLineNepali || rawNameClean || `गीत ${idx + 1}`;
       const cleanLyrics = cleanLyricsText(s.nepaliLyrics || "");
       const cleanTranslit = cleanLyricsText(s.translitLyrics || s.romanLyrics || "");
-
-      const isChorus = s.songType === "chorus" || /chorus|कोरस/i.test(s.name || "");
-      const category = isChorus ? "chorus" : "artist";
 
       const detailsParts = [];
       if (artistName && artistName !== "Unknown Artist") detailsParts.push(`Artist: ${artistName}`);
@@ -172,7 +219,7 @@ function convertDataset() {
         authors: artistName !== "Unknown Artist" ? `[Artist: ${artistName}]` : undefined,
         details: detailsParts.length > 0 ? `[${detailsParts.join(", ")}]` : undefined,
         letter: determineNepaliLetter(titleNepali, titleEn),
-        category: category,
+        category: "artist",
         songNumber: s.songNumber || undefined,
         mainChords: s.mainChords || undefined,
         beat: s.beat || undefined,
@@ -184,12 +231,11 @@ function convertDataset() {
         isDefault: true,
         isCustom: false
       });
+      modernSongCount++;
     });
   }
-
-  const songCount = convertedSongs.length - bhajanCount;
-  console.log(`🎵 Converted Modern Songs / Choruses: ${songCount}`);
-  console.log(`🌟 Total Songs in Master Database: ${convertedSongs.length}`);
+  console.log(`🎤 Converted Modern Songs by Artists: ${modernSongCount}`);
+  console.log(`🌟 Total Unified Songs / Lyrics: ${convertedSongs.length}`);
 
   // Write to both paths
   fs.writeFileSync(targetSrcPath, JSON.stringify(convertedSongs, null, 2), "utf-8");
@@ -198,13 +244,6 @@ function convertDataset() {
   console.log(`\n✅ Saved unified dataset to:`);
   console.log(`   • ${targetSrcPath}`);
   console.log(`   • ${targetPublicPath}`);
-
-  // Show top samples from both categories
-  console.log("\n--- Sample Bhajan ---");
-  console.log(JSON.stringify(convertedSongs[0], null, 2));
-
-  console.log("\n--- Sample Modern Song ---");
-  console.log(JSON.stringify(convertedSongs[bhajanCount], null, 2));
 }
 
 convertDataset();

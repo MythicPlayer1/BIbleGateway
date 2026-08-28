@@ -16,6 +16,7 @@ import {
   DEFAULT_TEXT_ANIMATION_CONFIG, getTextAnimationVariants, getTextAnimationDuration,
   DEFAULT_DISPLAY_CONFIG, getTextShadowCss, getFontFamilyCss
 } from "@/lib/lyrics";
+import { ClientReceiver } from "@/lib/broadcastSync";
 
 // Responsive pure-CSS viewport typography scaling with user fontSizeScale factor
 function getResponsiveFontSize(text: string, scale: number = 1.0) {
@@ -178,6 +179,18 @@ export default function Projector() {
     setIsDragging(false);
   };
 
+  // Remote Online Room Sync State (when accessed with ?room=XYZ)
+  const [roomCode, setRoomCode] = useState<string | null>(null);
+  const [onlineSyncStatus, setOnlineSyncStatus] = useState<'connecting' | 'connected' | 'disconnected'>('connecting');
+
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const searchParams = new URLSearchParams(window.location.search);
+      const r = searchParams.get('room');
+      if (r) setRoomCode(r.trim().toLowerCase());
+    }
+  }, []);
+
   const handleDoubleClick = (e: React.MouseEvent) => {
     if (mediaSlide?.fileType !== 'image') return;
     if (zoom > 1) {
@@ -188,186 +201,231 @@ export default function Projector() {
     }
   };
 
-  useEffect(() => {
-    const channel = new BroadcastChannel(BROADCAST_CHANNEL_NAME);
+  const hydrateBgConfig = (config: any): GlobalBackgroundConfig => {
+    if (!config) return config;
+    const clone = { ...config };
+    if (clone.slideshow?.images && Array.isArray(clone.slideshow.images)) {
+      clone.slideshow = {
+        ...clone.slideshow,
+        images: clone.slideshow.images.map((img: any) => {
+          if (img.buffer) {
+            try {
+              const blob = new Blob([img.buffer], { type: img.mime || 'image/jpeg' });
+              return {
+                ...img,
+                url: URL.createObjectURL(blob)
+              };
+            } catch {}
+          }
+          return img;
+        })
+      };
+    }
+    if (clone.video?.buffer) {
+      try {
+        const blob = new Blob([clone.video.buffer], { type: clone.video.mime || 'video/mp4' });
+        clone.video = {
+          ...clone.video,
+          url: URL.createObjectURL(blob)
+        };
+      } catch {}
+    }
+    return clone;
+  };
 
-    channel.onmessage = (event) => {
-      if (event.data.type === 'SET_VERSE') {
+  const processProjectorMessage = (data: any) => {
+    if (!data || typeof data !== 'object') return;
+
+    if (data.type === 'SET_VERSE') {
+      if (mediaSlideUrlRef.current) {
+        URL.revokeObjectURL(mediaSlideUrlRef.current);
+        mediaSlideUrlRef.current = null;
+      }
+      setMediaSlide(null);
+      setVerse({
+        text: data.text || '',
+        reference: data.reference || '',
+        title: data.title || '',
+        subtitle: data.subtitle || '',
+        layout: data.layout || 'standard',
+        textAlign: data.textAlign || 'center',
+        accentColor: data.accentColor || 'indigo',
+        qrCodeUrl: data.qrCodeUrl,
+        bankDetails: data.bankDetails,
+        qrBadgeLabel: data.qrBadgeLabel,
+        qrInstruction: data.qrInstruction,
+        countdownSeconds: data.countdownSeconds,
+        countdownLabel: data.countdownLabel,
+        countdownRunning: data.countdownRunning,
+        webEmbedUrl: data.webEmbedUrl,
+        embedType: data.embedType
+      });
+
+      if (data.layout === 'countdown' && typeof data.countdownSeconds === 'number' && !isTimerRunning) {
+        setCountdownLeft(data.countdownSeconds);
+      }
+    }
+    else if (data.type === 'SET_MEDIA_SLIDE') {
+      const incomingTitle = data.title || '';
+      const incomingType = data.fileType || 'image';
+
+      if (mediaSlide && mediaSlide.title === incomingTitle && mediaSlide.fileType === incomingType && mediaSlide.url) {
+        return;
+      }
+
+      if (mediaSlideUrlRef.current) {
+        URL.revokeObjectURL(mediaSlideUrlRef.current);
+        mediaSlideUrlRef.current = null;
+      }
+      let newUrl = data.url;
+      if (data.buffer) {
+        const blob = new Blob([data.buffer], { type: data.mime || 'image/jpeg' });
+        newUrl = URL.createObjectURL(blob);
+        mediaSlideUrlRef.current = newUrl;
+      }
+      setMediaSlide({
+        url: newUrl,
+        fileType: incomingType,
+        title: incomingTitle
+      });
+      setVerse(prev => ({ ...prev, text: '', reference: '' }));
+    }
+    else if (data.type === 'CLEAR_MEDIA_SLIDE') {
+      if (mediaSlideUrlRef.current) {
+        URL.revokeObjectURL(mediaSlideUrlRef.current);
+        mediaSlideUrlRef.current = null;
+      }
+      setMediaSlide(null);
+    }
+    else if (data.type === 'MEDIA_PLAY_PAUSE') {
+      setIsVideoPlaying(!!data.playing);
+    }
+    else if (data.type === 'MEDIA_MUTE_UNMUTE') {
+      setIsVideoMuted(!!data.muted);
+    }
+    else if (data.type === 'TOGGLE_TEXT_VISIBILITY') {
+      setIsTextHidden(!!data.hidden);
+    }
+    else if (data.type === 'SET_BACKGROUND_CONFIG' || data.type === 'SET_BG_CONFIG') {
+      if (data.config) {
+        const hydrated = hydrateBgConfig(data.config);
+        setBgConfig(hydrated);
+      }
+    }
+    else if (data.type === 'SET_BACKGROUND' || data.type === 'SET_BG') {
+      if (bgUrlRef.current) URL.revokeObjectURL(bgUrlRef.current);
+      let newUrl = data.url;
+      if (data.buffer) {
+        const blob = new Blob([data.buffer], { type: data.mime || 'image/jpeg' });
+        newUrl = URL.createObjectURL(blob);
+        bgUrlRef.current = newUrl;
+      }
+      setBgUrl(newUrl);
+      setBgType(data.fileType || 'image');
+    }
+    else if (data.type === 'SET_TEXT_ANIMATION') {
+      if (data.config) {
+        setTextAnim(data.config);
+      }
+    }
+    else if (data.type === 'SET_TICKER') {
+      if (data.config) {
+        setTicker(data.config);
+      }
+    }
+    else if (data.type === 'SET_DISPLAY_CONFIG') {
+      if (data.config) {
+        setDisplayConfig(data.config);
+      }
+    }
+    else if (data.type === 'COUNTDOWN_START') {
+      setIsTimerRunning(true);
+    }
+    else if (data.type === 'COUNTDOWN_PAUSE') {
+      setIsTimerRunning(false);
+    }
+    else if (data.type === 'COUNTDOWN_RESET') {
+      setIsTimerRunning(false);
+      setCountdownLeft(typeof data.seconds === 'number' ? data.seconds : 300);
+    }
+    else if (data.type === 'COUNTDOWN_ADJUST') {
+      setCountdownLeft(prev => Math.max(0, prev + (data.delta || 0)));
+    }
+    else if (data.type === 'CLEAR_BG') {
+      if (bgUrlRef.current) {
+        URL.revokeObjectURL(bgUrlRef.current);
+        bgUrlRef.current = null;
+      }
+      setBgUrl(null);
+      setBgType(null);
+      setBgConfig(null);
+    }
+    else if (data.type === 'INIT_STATE_RESPONSE') {
+      if (data.verse) {
         if (mediaSlideUrlRef.current) {
           URL.revokeObjectURL(mediaSlideUrlRef.current);
           mediaSlideUrlRef.current = null;
         }
         setMediaSlide(null);
-        setVerse({
-          text: event.data.text,
-          reference: event.data.reference,
-          title: event.data.title,
-          subtitle: event.data.subtitle,
-          layout: event.data.layout || 'standard',
-          textAlign: event.data.textAlign || 'center',
-          accentColor: event.data.accentColor || 'indigo',
-          qrCodeUrl: event.data.qrCodeUrl,
-          bankDetails: event.data.bankDetails,
-          qrBadgeLabel: event.data.qrBadgeLabel,
-          qrInstruction: event.data.qrInstruction,
-          countdownSeconds: event.data.countdownSeconds,
-          countdownLabel: event.data.countdownLabel,
-          countdownRunning: event.data.countdownRunning,
-          webEmbedUrl: event.data.webEmbedUrl,
-          embedType: event.data.embedType
-        });
-
-        if (event.data.layout === 'countdown' && typeof event.data.countdownSeconds === 'number' && !isTimerRunning) {
-          setCountdownLeft(event.data.countdownSeconds);
-        }
+        setVerse(data.verse);
       }
-      else if (event.data.type === 'SET_MEDIA_SLIDE') {
-        const incomingTitle = event.data.title || '';
-        const incomingType = event.data.fileType || 'image';
-
-        // If already showing the exact same media, skip recreation to avoid flicker
-        if (mediaSlide && mediaSlide.title === incomingTitle && mediaSlide.fileType === incomingType && mediaSlide.url) {
-          return;
-        }
-
-        if (mediaSlideUrlRef.current) {
-          URL.revokeObjectURL(mediaSlideUrlRef.current);
-          mediaSlideUrlRef.current = null;
-        }
-        let newUrl = event.data.url;
-        if (event.data.buffer) {
-          const blob = new Blob([event.data.buffer], { type: event.data.mime || 'image/jpeg' });
+      if (data.mediaSlide) {
+        let newUrl = data.mediaSlide.url;
+        if (data.mediaSlide.buffer) {
+          const blob = new Blob([data.mediaSlide.buffer], { type: data.mediaSlide.mime || 'image/jpeg' });
           newUrl = URL.createObjectURL(blob);
           mediaSlideUrlRef.current = newUrl;
         }
         setMediaSlide({
           url: newUrl,
-          fileType: incomingType,
-          title: incomingTitle
+          fileType: data.mediaSlide.fileType || 'image',
+          title: data.mediaSlide.title || ''
         });
-        setVerse(prev => ({ ...prev, text: '', reference: '' }));
       }
-      else if (event.data.type === 'CLEAR_MEDIA_SLIDE') {
-        if (mediaSlideUrlRef.current) {
-          URL.revokeObjectURL(mediaSlideUrlRef.current);
-          mediaSlideUrlRef.current = null;
-        }
-        setMediaSlide(null);
+      if (data.bgConfig) {
+        const hydratedBg = hydrateBgConfig(data.bgConfig);
+        setBgConfig(hydratedBg);
       }
-      else if (event.data.type === 'MEDIA_PLAY_PAUSE') {
-        setIsVideoPlaying(!!event.data.playing);
-      }
-      else if (event.data.type === 'MEDIA_MUTE_UNMUTE') {
-        setIsVideoMuted(!!event.data.muted);
-      }
-      else if (event.data.type === 'DISPLAY_CONFIG_SYNC' || event.data.type === 'SET_DISPLAY_CONFIG') {
-        if (event.data.config) {
-          setDisplayConfig(event.data.config);
-        }
-      }
-      else if (event.data.type === 'SET_TEXT_ANIMATION') {
-        if (event.data.config) {
-          setTextAnim(event.data.config);
-        }
-      }
-      else if (event.data.type === 'SET_BG_CONFIG') {
-        setBgConfig(event.data.config);
-      }
-      else if (event.data.type === 'SET_BACKGROUND' || event.data.type === 'SET_BG') {
+      if (data.background) {
         if (bgUrlRef.current) URL.revokeObjectURL(bgUrlRef.current);
-        let newUrl = event.data.url;
-        if (event.data.buffer) {
-          const blob = new Blob([event.data.buffer], { type: event.data.mime || 'image/jpeg' });
+        let newUrl = data.background.url;
+        if (data.background.buffer) {
+          const blob = new Blob([data.background.buffer], { type: data.background.mime || 'image/jpeg' });
           newUrl = URL.createObjectURL(blob);
           bgUrlRef.current = newUrl;
         }
         setBgUrl(newUrl);
-        setBgType(event.data.fileType || 'image');
+        setBgType(data.background.fileType || 'image');
       }
-      else if (event.data.type === 'CLEAR_BACKGROUND' || event.data.type === 'CLEAR_BG') {
-        if (bgUrlRef.current) URL.revokeObjectURL(bgUrlRef.current);
-        bgUrlRef.current = null;
-        setBgUrl(null);
-        setBgType(null);
-      }
-      else if (event.data.type === 'TOGGLE_HIDE') {
-        setIsTextHidden(!!event.data.hidden);
-      }
-      else if (event.data.type === 'HIDE_TEXT') {
-        setIsTextHidden(true);
-      }
-      else if (event.data.type === 'SHOW_TEXT') {
-        setIsTextHidden(false);
-      }
-      else if (event.data.type === 'SET_TICKER') {
-        const cfg = event.data.config || event.data.ticker;
-        if (cfg) {
-          setTicker(cfg);
-        } else {
-          setTicker(prev => ({
-            ...prev,
-            enabled: event.data.enabled !== undefined ? event.data.enabled : prev.enabled,
-            text: event.data.text !== undefined ? event.data.text : prev.text,
-            theme: event.data.theme || prev.theme,
-            position: event.data.position || prev.position,
-            speed: event.data.speed || prev.speed,
-            fontSize: event.data.fontSize || prev.fontSize,
-            badgeLabel: event.data.badgeLabel !== undefined ? event.data.badgeLabel : prev.badgeLabel,
-            showBadge: event.data.showBadge !== undefined ? event.data.showBadge : prev.showBadge
-          }));
-        }
-      }
-      else if (event.data.type === 'SET_COUNTDOWN_SYNC') {
-        if (event.data.secondsLeft !== undefined) {
-          setCountdownLeft(event.data.secondsLeft);
-        }
-        if (event.data.isRunning !== undefined) {
-          setIsTimerRunning(event.data.isRunning);
-        }
-      }
-      else if (event.data.type === 'TIMER_START') {
-        setIsTimerRunning(true);
-      }
-      else if (event.data.type === 'TIMER_PAUSE') {
-        setIsTimerRunning(false);
-      }
-      else if (event.data.type === 'TIMER_RESET') {
-        setIsTimerRunning(false);
-        setCountdownLeft(event.data.seconds || 300);
-      }
-      else if (event.data.type === 'INIT_STATE_RESPONSE') {
-        if (event.data.verse) {
-          setVerse(event.data.verse);
-        }
-        if (event.data.mediaSlide) {
-          if (mediaSlideUrlRef.current) URL.revokeObjectURL(mediaSlideUrlRef.current);
-          const blob = new Blob([event.data.mediaSlide.buffer], { type: event.data.mediaSlide.mime });
-          const newUrl = URL.createObjectURL(blob);
-          mediaSlideUrlRef.current = newUrl;
-          setMediaSlide({
-            url: newUrl,
-            fileType: event.data.mediaSlide.fileType,
-            title: event.data.mediaSlide.title
-          });
-        }
-        if (event.data.background) {
-          if (bgUrlRef.current) URL.revokeObjectURL(bgUrlRef.current);
-          const blob = new Blob([event.data.background.buffer], { type: event.data.background.mime });
-          const newUrl = URL.createObjectURL(blob);
-          bgUrlRef.current = newUrl;
-          setBgUrl(newUrl);
-          setBgType(event.data.background.fileType);
-        }
-        if (event.data.isTextHidden !== undefined) {
-          setIsTextHidden(event.data.isTextHidden);
-        }
-        if (event.data.ticker) {
-          setTicker(event.data.ticker);
-        }
-        if (event.data.displayConfig) {
-          setDisplayConfig(event.data.displayConfig);
-        }
-      }
+      if (data.ticker) setTicker(data.ticker);
+      if (data.textAnim) setTextAnim(data.textAnim);
+      if (data.displayConfig) setDisplayConfig(data.displayConfig);
+      if (data.isTextHidden !== undefined) setIsTextHidden(data.isTextHidden);
+      if (data.countdownLeft !== undefined) setCountdownLeft(data.countdownLeft);
+      if (data.countdownRunning !== undefined) setIsTimerRunning(data.countdownRunning);
+    }
+  };
+
+  // 1. WebRTC Remote Online Receiver
+  useEffect(() => {
+    if (!roomCode) return;
+
+    const receiver = new ClientReceiver(roomCode, {
+      onMessage: (msg) => processProjectorMessage(msg),
+      onStatusChange: (status) => setOnlineSyncStatus(status)
+    });
+
+    return () => {
+      receiver.destroy();
+    };
+  }, [roomCode]);
+
+  // 2. Local Same-Browser BroadcastChannel Receiver
+  useEffect(() => {
+    const channel = new BroadcastChannel(BROADCAST_CHANNEL_NAME);
+
+    channel.onmessage = (event) => {
+      processProjectorMessage(event.data);
     };
 
     // Instant restore from IndexedDB if available
@@ -644,6 +702,38 @@ export default function Projector() {
       onDoubleClick={toggleFullscreen}
       className="w-screen h-screen min-h-screen bg-[#030303] text-white flex flex-col items-center justify-center p-0 relative overflow-hidden select-none font-sans"
     >
+      {/* 0. Remote Online Room Connection Badge */}
+      {roomCode && (
+        <div
+          className={`fixed top-4 right-4 z-50 transition-all duration-300 pointer-events-auto select-none ${
+            onlineSyncStatus === 'connected' ? 'opacity-80 hover:opacity-100' : 'opacity-100'
+          }`}
+        >
+          <div className={`px-3.5 py-1.5 rounded-full border backdrop-blur-md text-xs font-bold flex items-center gap-2 shadow-2xl ${
+            onlineSyncStatus === 'connected'
+              ? 'bg-emerald-950/85 border-emerald-500/50 text-emerald-300'
+              : onlineSyncStatus === 'connecting'
+                ? 'bg-amber-950/85 border-amber-500/50 text-amber-300'
+                : 'bg-rose-950/85 border-rose-500/50 text-rose-300'
+          }`}>
+            <span className={`w-2 h-2 rounded-full ${
+              onlineSyncStatus === 'connected'
+                ? 'bg-emerald-400 animate-pulse'
+                : onlineSyncStatus === 'connecting'
+                  ? 'bg-amber-400 animate-ping'
+                  : 'bg-rose-500'
+            }`}></span>
+            <span>
+              {onlineSyncStatus === 'connected'
+                ? `Online Room: ${roomCode} • Live Synced`
+                : onlineSyncStatus === 'connecting'
+                  ? `Connecting to room: ${roomCode}...`
+                  : `Disconnected (Reconnecting...)`}
+            </span>
+          </div>
+        </div>
+      )}
+
       {/* 1. Global Background Layer */}
       <GlobalBackgroundLayer config={bgConfig} legacyBgUrl={bgUrl} legacyBgType={bgType} />
 
