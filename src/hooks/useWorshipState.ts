@@ -10,7 +10,7 @@ import {
   type TickerSpeed, type TickerFontSize, type MediaSlideItem,
   type GlobalBackgroundConfig, DEFAULT_BACKGROUND_CONFIG, type BackgroundImageItem,
   type TextAnimationConfig, DEFAULT_TEXT_ANIMATION_CONFIG, type TextAnimationEffect, type TextAnimationSpeed,
-  type ProjectorDisplayConfig,
+  type ProjectorDisplayConfig, DEFAULT_DISPLAY_CONFIG,
   type ServicePlan
 } from "@/lib/lyrics";
 import { romanToDevanagariExactMatch, nepaliToRoman } from "@/lib/transliterate";
@@ -21,6 +21,12 @@ import {
 import type { NewItemDataState } from "@/components/AddItemModal";
 import { useWorshipStore, initialSongsLibrary } from "@/store/useWorshipStore";
 import { HostBroadcaster, type ConnectedClientInfo } from "@/lib/broadcastSync";
+import { 
+  generatePairingToken, generateUniqueId, ROLE_PERMISSIONS,
+  type RemoteOperatorSession, type RemoteCommandPayload, type CanonicalPresentationState,
+  type ActivityLogItem, type PairingRequestMessage, type PairingResponseMessage,
+  type OperatorRole
+} from "@/lib/remoteControl";
 
 export function useWorshipState() {
   const {
@@ -116,22 +122,36 @@ export function useWorshipState() {
     toastTimeoutRef.current = setTimeout(() => setToastMessage(null), 3000);
   };
 
-  // Online WebRTC Remote Broadcasting State
-  const [isBroadcasting, setIsBroadcasting] = useState<boolean>(() => {
-    if (typeof window !== 'undefined') {
-      return localStorage.getItem('worship_is_broadcasting') === 'true';
-    }
-    return false;
-  });
-  const [broadcastRoomCode, setBroadcastRoomCode] = useState<string>(() => {
-    if (typeof window !== 'undefined') {
-      return localStorage.getItem('worship_broadcast_room') || 'sunday-worship';
-    }
-    return 'sunday-worship';
-  });
+  // Online WebRTC Remote Broadcasting & Remote Operator State
+  // SSR-safe: always start with stable defaults that match server render.
+  // localStorage is read only after mount in the hydration effect below.
+  const [isBroadcasting, setIsBroadcasting] = useState<boolean>(false);
+  const [broadcastRoomCode, setBroadcastRoomCode] = useState<string>('sunday-worship');
   const [connectedClients, setConnectedClients] = useState<ConnectedClientInfo[]>([]);
   const [isBroadcastModalOpen, setIsBroadcastModalOpen] = useState(false);
   const hostBroadcasterRef = useRef<HostBroadcaster | null>(null);
+
+  // Remote Operator System State
+  const [pairingToken, setPairingToken] = useState<string>('');
+  const [isRemoteControlEnabled, setIsRemoteControlEnabled] = useState<boolean>(true);
+  const [connectedOperators, setConnectedOperators] = useState<RemoteOperatorSession[]>([]);
+  const [pendingOperatorRequests, setPendingOperatorRequests] = useState<Array<{ req: PairingRequestMessage; conn: any }>>([]);
+  const [activeControllerId, setActiveControllerId] = useState<string | null>(null);
+  const [activityLogs, setActivityLogs] = useState<ActivityLogItem[]>([]);
+  const [stateRevision, setStateRevision] = useState<number>(1);
+  const [isRemoteOperatorModalOpen, setIsRemoteOperatorModalOpen] = useState(false);
+
+  // Post-mount hydration: read localStorage after client mount to avoid SSR mismatch
+  useEffect(() => {
+    setIsBroadcasting(localStorage.getItem('worship_is_broadcasting') === 'true');
+    setBroadcastRoomCode(localStorage.getItem('worship_broadcast_room') || 'sunday-worship');
+    setPairingToken(localStorage.getItem('worship_remote_pairing_token') || generatePairingToken());
+    // Hydrate displayConfig from localStorage
+    try {
+      const savedDisplay = localStorage.getItem('worship_display_config');
+      if (savedDisplay) setDisplayConfig({ ...DEFAULT_DISPLAY_CONFIG, ...JSON.parse(savedDisplay) });
+    } catch {}
+  }, []);
 
   const handleToggleBroadcast = (enabled: boolean) => {
     setIsBroadcasting(enabled);
@@ -163,12 +183,83 @@ export function useWorshipState() {
         hostBroadcasterRef.current = null;
       }
       setConnectedClients([]);
+      setConnectedOperators([]);
       return;
     }
 
     const host = new HostBroadcaster(broadcastRoomCode, {
       onClientsChange: (clients) => {
         setConnectedClients(clients);
+      },
+      onOperatorsChange: (operators) => {
+        setConnectedOperators(operators);
+      },
+      onOperatorPairingRequest: (req, conn) => {
+        // Validate Token: if matches current pairing token, auto-approve as Operator or add to pending queue
+        if (req.token && req.token.trim().toUpperCase() === pairingToken.trim().toUpperCase()) {
+          const session: RemoteOperatorSession = {
+            operatorId: req.operatorId,
+            name: req.name || "Mobile Operator",
+            deviceInfo: req.deviceInfo || "Mobile Browser",
+            role: req.requestedRole || "operator",
+            pairedAt: Date.now(),
+            lastActiveAt: Date.now(),
+            peerId: conn.peer,
+            isApproved: true,
+            hasControlLock: false
+          };
+          host.registerOperatorSession(session, conn);
+          conn.send({
+            type: "PAIRING_RESPONSE",
+            status: "approved",
+            role: session.role,
+            operatorId: session.operatorId,
+            sessionId: session.operatorId,
+            hasControlLock: false,
+            roomCode: broadcastRoomCode,
+            churchName: "Proclaim Sanctuary"
+          } as PairingResponseMessage);
+
+          // Push immediate state snapshot
+          conn.send({
+            type: "CANONICAL_STATE_UPDATE",
+            state: buildCanonicalState()
+          });
+
+          setActivityLogs(prev => [
+            {
+              id: generateUniqueId('log'),
+              timestamp: Date.now(),
+              operatorName: session.name,
+              operatorRole: session.role,
+              action: "Operator Paired (QR Token)",
+              details: req.deviceInfo,
+              type: "security"
+            },
+            ...prev.slice(0, 49)
+          ]);
+          showToast(`📱 ${session.name} connected via QR Pairing`);
+        } else {
+          // Add to pending manual approval list
+          setPendingOperatorRequests(prev => {
+            if (prev.some(p => p.req.operatorId === req.operatorId)) return prev;
+            return [...prev, { req, conn }];
+          });
+          conn.send({
+            type: "PAIRING_RESPONSE",
+            status: "pending",
+            role: "viewer",
+            operatorId: req.operatorId,
+            sessionId: "",
+            hasControlLock: false,
+            roomCode: broadcastRoomCode,
+            reason: "WAITING_FOR_HOST_APPROVAL"
+          } as PairingResponseMessage);
+          showToast(`🔔 ${req.name || 'A mobile device'} is requesting remote operator access`);
+        }
+      },
+      onOperatorCommand: async (cmd, session) => {
+        return handleExecuteRemoteCommand(cmd, session);
       },
       onMessageReceived: async (msg, conn) => {
         if (msg.type === 'REQUEST_INIT_STATE') {
@@ -239,7 +330,7 @@ export function useWorshipState() {
       host.destroy();
       hostBroadcasterRef.current = null;
     };
-  }, [isBroadcasting, broadcastRoomCode]);
+  }, [isBroadcasting, broadcastRoomCode, pairingToken]);
 
   const broadcastToProjector = (payload: any) => {
     if (channelRef.current) {
@@ -2201,6 +2292,429 @@ export function useWorshipState() {
     });
   };
 
+  // Canonical Presentation State Builder
+  const buildCanonicalState = (): CanonicalPresentationState => {
+    const activeItem = scheduleItems.find(item => item.id === selectedItemId);
+    const activeSlide = activeSlides[selectedSlideIndex];
+    const currentIndexInSchedule = scheduleItems.findIndex(item => item.id === selectedItemId);
+    const nextItem = currentIndexInSchedule >= 0 && currentIndexInSchedule < scheduleItems.length - 1
+      ? scheduleItems[currentIndexInSchedule + 1]
+      : null;
+
+    let nextSlidePreviewText: string | null = null;
+    if (activeSlides.length > selectedSlideIndex + 1) {
+      nextSlidePreviewText = activeSlides[selectedSlideIndex + 1]?.text || null;
+    } else if (nextItem) {
+      nextSlidePreviewText = nextItem.customSlides?.[0]?.text || nextItem.title || null;
+    }
+
+    const activeController = connectedOperators.find(op => op.operatorId === activeControllerId);
+
+    return {
+      revision: stateRevision,
+      updatedAt: Date.now(),
+      activeItemId: selectedItemId,
+      activeSlideIndex: selectedSlideIndex,
+      activeItemTitle: activeItem?.title || (appMode === 'bible' ? "Bible Scripture" : "Presentation"),
+      activeSlideText: currentPreviewText,
+      activeSlideCitation: currentPreviewReference,
+      activeSlideSection: activeSlide?.section || `Slide ${selectedSlideIndex + 1}`,
+      totalSlidesInItem: activeSlides.length || 1,
+      nextItemTitle: nextItem?.title || null,
+      nextSlideText: nextSlidePreviewText,
+      isTextHidden,
+      isBlackout: isTextHidden,
+      isDisplayConnected,
+      isBroadcasting,
+      countdownLeft,
+      isCountdownRunning,
+      tickerConfig,
+      globalBgConfig,
+      textAnimConfig,
+      displayConfig,
+      scheduleItems: scheduleItems.map(item => ({
+        id: item.id,
+        title: item.title,
+        subtitle: item.subtitle,
+        type: item.type,
+        slideCount: (item.customSlides || []).length,
+        slides: (item.customSlides || []).map(s => ({
+          section: s.section,
+          lines: s.lines || [],
+          text: s.text,
+          title: s.title
+        }))
+      })),
+      activeControllerId,
+      activeControllerName: activeController?.name || (activeControllerId ? "Remote Operator" : "Desktop Host")
+    };
+  };
+
+  // Remote Operator Command Execution Pipeline
+  const handleExecuteRemoteCommand = async (
+    cmd: RemoteCommandPayload,
+    session: RemoteOperatorSession
+  ): Promise<{ success: boolean; reason?: string }> => {
+    if (!isRemoteControlEnabled) {
+      return { success: false, reason: "REMOTE_CONTROL_DISABLED" };
+    }
+
+    const perms = ROLE_PERMISSIONS[session.role] || ROLE_PERMISSIONS.viewer;
+
+    if (session.role === 'viewer' && cmd.type !== 'PING') {
+      return { success: false, reason: "VIEWER_CANNOT_CONTROL" };
+    }
+
+    if (activeControllerId && activeControllerId !== session.operatorId) {
+      if (cmd.type !== 'REQUEST_CONTROL_LOCK' && cmd.type !== 'PING') {
+        const lockHolder = connectedOperators.find(o => o.operatorId === activeControllerId)?.name || 'another operator';
+        return { 
+          success: false, 
+          reason: `Control locked by ${lockHolder}` 
+        };
+      }
+    }
+
+    const logAction = (action: string, details?: string, type: ActivityLogItem['type'] = 'navigation') => {
+      const logItem: ActivityLogItem = {
+        id: generateUniqueId('log'),
+        timestamp: Date.now(),
+        operatorName: session.name,
+        operatorRole: session.role,
+        action,
+        details,
+        type
+      };
+      setActivityLogs(prev => [logItem, ...prev.slice(0, 49)]);
+    };
+
+    switch (cmd.type) {
+      case 'PRESENTATION_NEXT': {
+        if (!perms.canControlSlides) return { success: false, reason: "PERMISSION_DENIED" };
+        handleNext();
+        logAction("Next Slide");
+        break;
+      }
+      case 'PRESENTATION_PREVIOUS': {
+        if (!perms.canControlSlides) return { success: false, reason: "PERMISSION_DENIED" };
+        handlePrev();
+        logAction("Previous Slide");
+        break;
+      }
+      case 'PRESENTATION_GO_LIVE': {
+        if (!perms.canControlSlides) return { success: false, reason: "PERMISSION_DENIED" };
+        const itemId = cmd.params?.itemId;
+        const slideIdx = cmd.params?.slideIndex ?? 0;
+        if (itemId) {
+          setSelectedItemId(itemId);
+          selectSlideIndex(slideIdx);
+          try { localStorage.setItem('worship_selected_item_id', itemId); } catch {}
+          const itm = scheduleItems.find(i => i.id === itemId);
+          logAction("Go Live", `${itm?.title || 'Item'} (Slide ${slideIdx + 1})`);
+        }
+        break;
+      }
+      case 'PRESENTATION_SELECT_ITEM': {
+        if (!perms.canControlSlides) return { success: false, reason: "PERMISSION_DENIED" };
+        const itemId = cmd.params?.itemId;
+        if (itemId) {
+          setSelectedItemId(itemId);
+          selectSlideIndex(0);
+          try { localStorage.setItem('worship_selected_item_id', itemId); } catch {}
+          logAction("Select Item", itemId);
+        }
+        break;
+      }
+      case 'PRESENTATION_SELECT_SLIDE': {
+        if (!perms.canControlSlides) return { success: false, reason: "PERMISSION_DENIED" };
+        const idx = cmd.params?.slideIndex ?? 0;
+        selectSlideIndex(idx);
+        logAction("Select Slide", `Slide ${idx + 1}`);
+        break;
+      }
+      case 'PRESENTATION_BLACKOUT':
+      case 'PRESENTATION_TEXT_MUTE': {
+        if (!perms.canBlackout) return { success: false, reason: "PERMISSION_DENIED" };
+        setIsTextHidden(true);
+        if (channelRef.current) {
+          channelRef.current.postMessage({ type: 'TOGGLE_HIDE', hidden: true });
+        }
+        logAction("Blackout / Text Muted", undefined, 'control');
+        break;
+      }
+      case 'PRESENTATION_TEXT_SHOW': {
+        if (!perms.canBlackout) return { success: false, reason: "PERMISSION_DENIED" };
+        setIsTextHidden(false);
+        if (channelRef.current) {
+          channelRef.current.postMessage({ type: 'TOGGLE_HIDE', hidden: false });
+        }
+        logAction("Text Visible", undefined, 'control');
+        break;
+      }
+      case 'COUNTDOWN_START': {
+        if (!perms.canControlTimer) return { success: false, reason: "PERMISSION_DENIED" };
+        setIsCountdownRunning(true);
+        logAction("Started Countdown", undefined, 'control');
+        break;
+      }
+      case 'COUNTDOWN_PAUSE': {
+        if (!perms.canControlTimer) return { success: false, reason: "PERMISSION_DENIED" };
+        setIsCountdownRunning(false);
+        logAction("Paused Countdown", undefined, 'control');
+        break;
+      }
+      case 'COUNTDOWN_RESET': {
+        if (!perms.canControlTimer) return { success: false, reason: "PERMISSION_DENIED" };
+        setIsCountdownRunning(false);
+        const secs = cmd.params?.seconds ?? 300;
+        setCountdownLeft(secs);
+        logAction("Reset Countdown", `${Math.floor(secs / 60)}m`, 'control');
+        break;
+      }
+      case 'COUNTDOWN_ADJUST': {
+        if (!perms.canControlTimer) return { success: false, reason: "PERMISSION_DENIED" };
+        const delta = cmd.params?.delta ?? 60;
+        setCountdownLeft(prev => Math.max(0, prev + delta));
+        logAction("Adjusted Countdown", `${delta > 0 ? '+' : ''}${delta}s`, 'control');
+        break;
+      }
+      case 'TICKER_TOGGLE': {
+        if (!perms.canControlTicker) return { success: false, reason: "PERMISSION_DENIED" };
+        const nextEnabled = cmd.params?.hidden !== undefined ? !cmd.params.hidden : !tickerConfig.enabled;
+        setTickerConfig({ ...tickerConfig, enabled: nextEnabled });
+        logAction(nextEnabled ? "Ticker Shown" : "Ticker Hidden", undefined, 'control');
+        break;
+      }
+      case 'REQUEST_CONTROL_LOCK': {
+        if (!perms.canRequestControlLock) return { success: false, reason: "PERMISSION_DENIED" };
+        setActiveControllerId(session.operatorId);
+        hostBroadcasterRef.current?.setControlLock(session.operatorId);
+        logAction("Acquired Control Lock", session.name, 'security');
+        showToast(`🔒 ${session.name} is now controlling the presentation`);
+        break;
+      }
+      case 'RELEASE_CONTROL_LOCK': {
+        setActiveControllerId(null);
+        hostBroadcasterRef.current?.setControlLock(null);
+        logAction("Released Control Lock", session.name, 'security');
+        showToast("🟢 Desktop Control active");
+        break;
+      }
+      default:
+        break;
+    }
+
+    setStateRevision(r => r + 1);
+    return { success: true };
+  };
+
+  // Broadcast canonical state on changes & sync to local HTTP endpoint
+  useEffect(() => {
+    // Only sync to server when remote control is active (broadcasting)
+    if (!isBroadcasting) return;
+
+    const snap = buildCanonicalState();
+
+    if (hostBroadcasterRef.current) {
+      hostBroadcasterRef.current.broadcastCanonicalState(snap);
+    }
+
+    // Sync to local /api/remote-sync
+    fetch('/api/remote-sync', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        action: 'UPDATE_HOST_STATE',
+        roomCode: broadcastRoomCode,
+        pairingToken,
+        state: snap
+      })
+    }).catch(() => {});
+  }, [
+    selectedItemId,
+    selectedSlideIndex,
+    isTextHidden,
+    tickerConfig,
+    globalBgConfig,
+    countdownLeft,
+    isCountdownRunning,
+    scheduleItems,
+    stateRevision,
+    activeControllerId,
+    isDisplayConnected,
+    isBroadcasting
+  ]);
+
+  // Server-Side HTTP Command Receiver Loop (only runs when broadcast/remote control is active)
+  useEffect(() => {
+    if (!isBroadcasting) return; // Stop polling when remote control is closed
+
+    let isCancelled = false;
+
+    const pollServerSync = async () => {
+      try {
+        const snap = buildCanonicalState();
+        const res = await fetch('/api/remote-sync', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            action: 'UPDATE_HOST_STATE',
+            roomCode: broadcastRoomCode,
+            pairingToken,
+            state: snap
+          })
+        });
+
+        if (res.ok) {
+          const data = await res.json();
+          if (data.pendingCommands && data.pendingCommands.length > 0 && !isCancelled) {
+            for (const cmd of data.pendingCommands) {
+              const session = data.operators?.find((o: any) => o.operatorId === cmd.operatorId) || {
+                operatorId: cmd.operatorId,
+                name: "Mobile Operator",
+                deviceInfo: "Mobile Client",
+                role: "operator" as OperatorRole,
+                pairedAt: Date.now(),
+                lastActiveAt: Date.now(),
+                peerId: "",
+                isApproved: true,
+                hasControlLock: false
+              };
+              await handleExecuteRemoteCommand(cmd, session);
+            }
+          }
+          if (data.pendingRequests && !isCancelled) {
+            setPendingOperatorRequests(prev => {
+              const existingIds = new Set(prev.map(p => p.req.operatorId));
+              const newReqs = (data.pendingRequests as PairingRequestMessage[])
+                .filter(r => !existingIds.has(r.operatorId))
+                .map(req => ({ req, conn: null }));
+              return [...prev, ...newReqs];
+            });
+          }
+        }
+      } catch {}
+    };
+
+    const interval = setInterval(pollServerSync, 600);
+    return () => {
+      isCancelled = true;
+      clearInterval(interval);
+    };
+  }, [broadcastRoomCode, pairingToken, selectedItemId, selectedSlideIndex, isTextHidden, tickerConfig, globalBgConfig, countdownLeft, isCountdownRunning, scheduleItems, stateRevision]);
+
+  // Remote Operator Management Handlers
+  const handleRegeneratePairingToken = () => {
+    const newToken = generatePairingToken();
+    setPairingToken(newToken);
+    try {
+      localStorage.setItem('worship_remote_pairing_token', newToken);
+    } catch {}
+    showToast(`New Pairing Token generated: ${newToken}`);
+  };
+
+  const handleApproveOperator = (request: PairingRequestMessage, role: OperatorRole = 'operator') => {
+    const session: RemoteOperatorSession = {
+      operatorId: request.operatorId,
+      name: request.name || "Mobile Operator",
+      deviceInfo: request.deviceInfo || "Mobile Device",
+      role,
+      pairedAt: Date.now(),
+      lastActiveAt: Date.now(),
+      peerId: request.operatorId,
+      isApproved: true,
+      hasControlLock: false
+    };
+
+    const pendingConn = pendingOperatorRequests.find(p => p.req.operatorId === request.operatorId)?.conn;
+
+    if (pendingConn && hostBroadcasterRef.current) {
+      hostBroadcasterRef.current.registerOperatorSession(session, pendingConn);
+      try {
+        pendingConn.send({
+          type: 'PAIRING_RESPONSE',
+          status: 'approved',
+          role,
+          operatorId: request.operatorId,
+          sessionId: request.operatorId,
+          hasControlLock: false,
+          roomCode: broadcastRoomCode,
+          churchName: "Proclaim Sanctuary"
+        } as PairingResponseMessage);
+        pendingConn.send({
+          type: 'CANONICAL_STATE_UPDATE',
+          state: buildCanonicalState()
+        });
+      } catch {}
+    }
+
+    setPendingOperatorRequests(prev => prev.filter(p => p.req.operatorId !== request.operatorId));
+    setConnectedOperators(prev => [...prev.filter(o => o.operatorId !== request.operatorId), session]);
+
+    setActivityLogs(prev => [
+      {
+        id: generateUniqueId('log'),
+        timestamp: Date.now(),
+        operatorName: request.name || "Mobile Operator",
+        operatorRole: role,
+        action: "Operator Approved",
+        details: `Granted ${role} access`,
+        type: "security"
+      },
+      ...prev.slice(0, 49)
+    ]);
+
+    showToast(`Approved ${request.name} as ${role}`);
+  };
+
+  const handleDenyOperator = (operatorId: string) => {
+    const pending = pendingOperatorRequests.find(p => p.req.operatorId === operatorId);
+    if (pending) {
+      try {
+        pending.conn.send({
+          type: 'PAIRING_RESPONSE',
+          status: 'denied',
+          role: 'viewer',
+          operatorId,
+          sessionId: '',
+          hasControlLock: false,
+          roomCode: broadcastRoomCode,
+          reason: 'REQUEST_DENIED_BY_HOST'
+        } as PairingResponseMessage);
+      } catch {}
+    }
+    setPendingOperatorRequests(prev => prev.filter(p => p.req.operatorId !== operatorId));
+    showToast("Operator request denied");
+  };
+
+  const handleUpdateOperatorRole = (operatorId: string, newRole: OperatorRole) => {
+    if (hostBroadcasterRef.current) {
+      hostBroadcasterRef.current.updateOperatorRole(operatorId, newRole);
+    }
+    setConnectedOperators(prev => prev.map(op => op.operatorId === operatorId ? { ...op, role: newRole } : op));
+    showToast(`Updated operator role to ${newRole}`);
+  };
+
+  const handleRevokeOperator = (operatorId: string) => {
+    if (hostBroadcasterRef.current) {
+      hostBroadcasterRef.current.removeOperatorSession(operatorId);
+    }
+    setConnectedOperators(prev => prev.filter(op => op.operatorId !== operatorId));
+    if (activeControllerId === operatorId) {
+      setActiveControllerId(null);
+    }
+    showToast("Operator revoked");
+  };
+
+  const handleRevokeAllOperators = () => {
+    if (hostBroadcasterRef.current) {
+      hostBroadcasterRef.current.revokeAllOperators();
+    }
+    setConnectedOperators([]);
+    setActiveControllerId(null);
+    showToast("All remote devices revoked");
+  };
+
   return {
     appMode,
     switchAppMode,
@@ -2363,6 +2877,24 @@ export function useWorshipState() {
     isBroadcastModalOpen,
     setIsBroadcastModalOpen,
     handleToggleBroadcast,
-    handleChangeBroadcastRoomCode
+    handleChangeBroadcastRoomCode,
+    // Remote Operator System Exports
+    pairingToken,
+    isRemoteControlEnabled,
+    setIsRemoteControlEnabled,
+    connectedOperators,
+    pendingOperatorRequests,
+    activeControllerId,
+    activityLogs,
+    stateRevision,
+    isRemoteOperatorModalOpen,
+    setIsRemoteOperatorModalOpen,
+    handleRegeneratePairingToken,
+    handleApproveOperator,
+    handleDenyOperator,
+    handleUpdateOperatorRole,
+    handleRevokeOperator,
+    handleRevokeAllOperators
   };
 }
+

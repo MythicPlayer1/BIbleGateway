@@ -333,15 +333,8 @@ export const useWorshipStore = create<WorshipStoreState>((set) => ({
   })),
 
   // Display & Typography Customization
-  displayConfig: (() => {
-    if (typeof window !== 'undefined') {
-      try {
-        const saved = localStorage.getItem('worship_display_config');
-        if (saved) return { ...DEFAULT_DISPLAY_CONFIG, ...JSON.parse(saved) };
-      } catch {}
-    }
-    return DEFAULT_DISPLAY_CONFIG;
-  })(),
+  // SSR-safe: always use DEFAULT_DISPLAY_CONFIG. Hydrated from localStorage client-side.
+  displayConfig: DEFAULT_DISPLAY_CONFIG,
   isDisplayModalOpen: false,
   setDisplayConfig: (updater) => set((state) => {
     const nextConfig = typeof updater === 'function' ? updater(state.displayConfig) : updater;

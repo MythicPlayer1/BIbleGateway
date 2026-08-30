@@ -19,6 +19,7 @@ import { ConfirmModal } from "@/components/ConfirmModal";
 import { DisplaySettingsModal } from "@/components/DisplaySettingsModal";
 import { BroadcastWonderPickerModal, type BroadcastTabOption } from "@/components/BroadcastWonderPickerModal";
 import { FloatingBroadcastWidget } from "@/components/FloatingBroadcastWidget";
+import { RemoteOperatorModal } from "@/components/RemoteOperatorModal";
 
 export default function Home() {
   const state = useWorshipState();
@@ -188,6 +189,7 @@ export default function Home() {
         isDisplayConnected={state.isDisplayConnected}
         onOpenWonderPicker={handleOpenWonderPickerWithTab}
         onOpenProjector={state.handleOpenProjector}
+        onOpenRemoteModal={() => state.setIsRemoteOperatorModalOpen(true)}
       />
 
       {/* Interactive Modals & Toast */}
@@ -202,6 +204,32 @@ export default function Home() {
         connectedClients={state.connectedClients}
         isDisplayConnected={state.isDisplayConnected}
         onOpenProjector={state.handleOpenProjector}
+        onOpenRemoteModal={() => {
+          state.setIsBroadcastModalOpen(false);
+          state.setIsRemoteOperatorModalOpen(true);
+        }}
+      />
+
+      {/* Remote Operator Management Modal */}
+      <RemoteOperatorModal
+        isOpen={state.isRemoteOperatorModalOpen}
+        onClose={() => state.setIsRemoteOperatorModalOpen(false)}
+        roomCode={state.broadcastRoomCode}
+        pairingToken={state.pairingToken}
+        isBroadcasting={state.isBroadcasting}
+        isRemoteControlEnabled={state.isRemoteControlEnabled}
+        onToggleRemoteControl={state.setIsRemoteControlEnabled}
+        onRegenerateToken={state.handleRegeneratePairingToken}
+        connectedOperators={state.connectedOperators}
+        pendingRequests={state.pendingOperatorRequests}
+        activeControllerId={state.activeControllerId}
+        activityLogs={state.activityLogs}
+        onApproveOperator={state.handleApproveOperator}
+        onDenyOperator={state.handleDenyOperator}
+        onUpdateRole={state.handleUpdateOperatorRole}
+        onRevokeOperator={state.handleRevokeOperator}
+        onRevokeAll={state.handleRevokeAllOperators}
+        onStartBroadcast={() => state.handleToggleBroadcast(true)}
       />
 
       <BackgroundStudioModal

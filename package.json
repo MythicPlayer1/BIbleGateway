@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev",
+    "dev": "next dev --hostname 0.0.0.0",
     "build:search-index": "node scripts/build-song-search-index.js",
     "build": "node scripts/build-song-search-index.js && next build",
     "start": "next start",

@@ -164,7 +164,7 @@ export const LiveScreenMonitor: React.FC<LiveScreenMonitorProps> = ({
                 title="Broadcast projector feed online to TVs, iPads, and OBS"
               >
                 <Radio size={13} className={isBroadcasting ? "text-emerald-400 animate-pulse" : "text-neutral-400"} />
-                <span>{isBroadcasting ? `ON AIR (${connectedClientsCount})` : "Broadcast"}</span>
+                <span suppressHydrationWarning>{isBroadcasting ? `ON AIR (${connectedClientsCount})` : "Broadcast"}</span>
               </button>
             )}
 
@@ -176,8 +176,9 @@ export const LiveScreenMonitor: React.FC<LiveScreenMonitorProps> = ({
                 title="Customize Font Size, Text Color, Shadows & Auto-Fit"
               >
                 <Sliders size={13} className="text-indigo-400 group-hover:rotate-45 transition-transform" />
-                <span>Typography ({Math.round(displayConfig.fontSizeScale * 100)}%)</span>
+                <span suppressHydrationWarning>Typography ({Math.round(displayConfig.fontSizeScale * 100)}%)</span>
                 <span
+                  suppressHydrationWarning
                   className="w-3 h-3 rounded-full border border-white/30 ml-0.5 shadow-sm"
                   style={{ backgroundColor: displayConfig.textColor }}
                 />

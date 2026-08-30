@@ -4,7 +4,7 @@ import React, { useState, useRef, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { 
   Radio, Cast, Globe, Monitor, Video, Wifi, 
-  Sparkles, X, Plus, ExternalLink, QrCode
+  Sparkles, X, Plus, ExternalLink, QrCode, Smartphone
 } from "lucide-react";
 import type { BroadcastTabOption } from "@/components/BroadcastWonderPickerModal";
 
@@ -14,6 +14,7 @@ interface FloatingBroadcastWidgetProps {
   isDisplayConnected: boolean;
   onOpenWonderPicker: (tab?: BroadcastTabOption) => void;
   onOpenProjector?: () => void;
+  onOpenRemoteModal?: () => void;
 }
 
 export const FloatingBroadcastWidget: React.FC<FloatingBroadcastWidgetProps> = ({
@@ -21,7 +22,8 @@ export const FloatingBroadcastWidget: React.FC<FloatingBroadcastWidgetProps> = (
   connectedClientsCount,
   isDisplayConnected,
   onOpenWonderPicker,
-  onOpenProjector
+  onOpenProjector,
+  onOpenRemoteModal
 }) => {
   const [isOpen, setIsOpen] = useState(false);
   const isDraggingRef = useRef(false);
@@ -68,6 +70,21 @@ export const FloatingBroadcastWidget: React.FC<FloatingBroadcastWidgetProps> = (
   };
 
   const options = [
+    {
+      id: 'remote_operator',
+      label: 'Remote Phone Control',
+      subtitle: 'Scan QR / PWA Remote',
+      icon: Smartphone,
+      color: 'bg-indigo-600 text-white',
+      pillBg: 'bg-gradient-to-r from-indigo-500 to-purple-400 text-white font-black shadow-lg shadow-indigo-900/40 ring-1 ring-white/30',
+      action: () => {
+        if (onOpenRemoteModal) {
+          onOpenRemoteModal();
+        } else {
+          onOpenWonderPicker('internet_room');
+        }
+      }
+    },
     {
       id: 'internet_room' as BroadcastTabOption,
       label: 'Internet Live Room',

@@ -338,6 +338,11 @@ export default function Projector() {
         setDisplayConfig(data.config);
       }
     }
+    else if (data.type === 'SET_COUNTDOWN_SYNC') {
+      // Master timer sync from host — always trust the host's authoritative value
+      if (typeof data.secondsLeft === 'number') setCountdownLeft(data.secondsLeft);
+      if (data.isRunning !== undefined) setIsTimerRunning(data.isRunning);
+    }
     else if (data.type === 'COUNTDOWN_START') {
       setIsTimerRunning(true);
     }

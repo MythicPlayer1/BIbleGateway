@@ -22,6 +22,7 @@ interface BroadcastWonderPickerModalProps {
   isDisplayConnected: boolean;
   onOpenProjector: () => void;
   initialTab?: BroadcastTabOption;
+  onOpenRemoteModal?: () => void;
 }
 
 export const BroadcastWonderPickerModal: React.FC<BroadcastWonderPickerModalProps> = ({
@@ -34,7 +35,8 @@ export const BroadcastWonderPickerModal: React.FC<BroadcastWonderPickerModalProp
   connectedClients,
   isDisplayConnected,
   onOpenProjector,
-  initialTab = 'internet_room'
+  initialTab = 'internet_room',
+  onOpenRemoteModal
 }) => {
   const [activeTab, setActiveTab] = useState<BroadcastTabOption>(initialTab);
   const [localRoomInput, setLocalRoomInput] = useState(roomCode);
