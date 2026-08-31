@@ -140,6 +140,7 @@ export function useWorshipState() {
   const [activityLogs, setActivityLogs] = useState<ActivityLogItem[]>([]);
   const [stateRevision, setStateRevision] = useState<number>(1);
   const [isRemoteOperatorModalOpen, setIsRemoteOperatorModalOpen] = useState(false);
+  const [isHttpFallbackActive, setIsHttpFallbackActive] = useState<boolean>(false);
 
   // Post-mount hydration: read localStorage after client mount to avoid SSR mismatch
   useEffect(() => {
@@ -188,6 +189,13 @@ export function useWorshipState() {
     }
 
     const host = new HostBroadcaster(broadcastRoomCode, {
+      onStatusChange: (status) => {
+        if (status === 'ready') {
+          setIsHttpFallbackActive(false);
+        } else if (status === 'error' || status === 'disconnected') {
+          setIsHttpFallbackActive(true);
+        }
+      },
       onClientsChange: (clients) => {
         setConnectedClients(clients);
       },
@@ -318,6 +326,7 @@ export function useWorshipState() {
         }
       },
       onError: (err) => {
+        setIsHttpFallbackActive(true);
         if (err.type === 'unavailable-id') {
           showToast(`⚠️ Room "${broadcastRoomCode}" is already in use by another tab or host. Try another name.`);
         }
@@ -2508,9 +2517,8 @@ export function useWorshipState() {
     return { success: true };
   };
 
-  // Broadcast canonical state on changes & sync to local HTTP endpoint
+  // Broadcast canonical state on changes (WebRTC DataChannel primarily; HTTP LAN only when fallback is active)
   useEffect(() => {
-    // Only sync to server when remote control is active (broadcasting)
     if (!isBroadcasting) return;
 
     const snap = buildCanonicalState();
@@ -2519,18 +2527,22 @@ export function useWorshipState() {
       hostBroadcasterRef.current.broadcastCanonicalState(snap);
     }
 
-    // Sync to local /api/remote-sync
-    fetch('/api/remote-sync', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        action: 'UPDATE_HOST_STATE',
-        roomCode: broadcastRoomCode,
-        pairingToken,
-        state: snap
-      })
-    }).catch(() => {});
+    // Only dispatch to HTTP server if WebRTC failed or HTTP fallback is actively needed
+    if (isHttpFallbackActive) {
+      fetch('/api/remote-sync', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'UPDATE_HOST_STATE',
+          roomCode: broadcastRoomCode,
+          pairingToken,
+          state: snap
+        })
+      }).catch(() => {});
+    }
   }, [
+    isBroadcasting,
+    isHttpFallbackActive,
     selectedItemId,
     selectedSlideIndex,
     isTextHidden,
@@ -2541,13 +2553,13 @@ export function useWorshipState() {
     scheduleItems,
     stateRevision,
     activeControllerId,
-    isDisplayConnected,
-    isBroadcasting
+    isDisplayConnected
   ]);
 
-  // Server-Side HTTP Command Receiver Loop (only runs when broadcast/remote control is active)
+  // Server-Side HTTP Command Receiver Loop (Option B: ONLY runs when WebRTC is unavailable and HTTP fallback is required)
   useEffect(() => {
-    if (!isBroadcasting) return; // Stop polling when remote control is closed
+    // 100% idle if broadcasting is off OR if WebRTC is healthy
+    if (!isBroadcasting || !isHttpFallbackActive) return;
 
     let isCancelled = false;
 
@@ -2596,12 +2608,12 @@ export function useWorshipState() {
       } catch {}
     };
 
-    const interval = setInterval(pollServerSync, 600);
+    const interval = setInterval(pollServerSync, 1500);
     return () => {
       isCancelled = true;
       clearInterval(interval);
     };
-  }, [broadcastRoomCode, pairingToken, selectedItemId, selectedSlideIndex, isTextHidden, tickerConfig, globalBgConfig, countdownLeft, isCountdownRunning, scheduleItems, stateRevision]);
+  }, [isBroadcasting, isHttpFallbackActive, broadcastRoomCode, pairingToken, selectedItemId, selectedSlideIndex, isTextHidden, tickerConfig, globalBgConfig, countdownLeft, isCountdownRunning, scheduleItems, stateRevision]);
 
   // Remote Operator Management Handlers
   const handleRegeneratePairingToken = () => {
@@ -2664,12 +2676,24 @@ export function useWorshipState() {
       ...prev.slice(0, 49)
     ]);
 
+    // Sync to local HTTP LAN endpoint
+    fetch('/api/remote-sync', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        action: 'APPROVE_OPERATOR',
+        roomCode: broadcastRoomCode,
+        operatorId: request.operatorId,
+        role
+      })
+    }).catch(() => {});
+
     showToast(`Approved ${request.name} as ${role}`);
   };
 
   const handleDenyOperator = (operatorId: string) => {
     const pending = pendingOperatorRequests.find(p => p.req.operatorId === operatorId);
-    if (pending) {
+    if (pending && pending.conn) {
       try {
         pending.conn.send({
           type: 'PAIRING_RESPONSE',
@@ -2683,6 +2707,18 @@ export function useWorshipState() {
         } as PairingResponseMessage);
       } catch {}
     }
+
+    // Sync to local HTTP LAN endpoint
+    fetch('/api/remote-sync', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        action: 'REVOKE_OPERATOR',
+        roomCode: broadcastRoomCode,
+        operatorId
+      })
+    }).catch(() => {});
+
     setPendingOperatorRequests(prev => prev.filter(p => p.req.operatorId !== operatorId));
     showToast("Operator request denied");
   };
@@ -2692,6 +2728,19 @@ export function useWorshipState() {
       hostBroadcasterRef.current.updateOperatorRole(operatorId, newRole);
     }
     setConnectedOperators(prev => prev.map(op => op.operatorId === operatorId ? { ...op, role: newRole } : op));
+
+    // Sync to local HTTP LAN endpoint
+    fetch('/api/remote-sync', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        action: 'UPDATE_OPERATOR_ROLE',
+        roomCode: broadcastRoomCode,
+        operatorId,
+        role: newRole
+      })
+    }).catch(() => {});
+
     showToast(`Updated operator role to ${newRole}`);
   };
 
@@ -2703,6 +2752,18 @@ export function useWorshipState() {
     if (activeControllerId === operatorId) {
       setActiveControllerId(null);
     }
+
+    // Sync to local HTTP LAN endpoint
+    fetch('/api/remote-sync', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        action: 'REVOKE_OPERATOR',
+        roomCode: broadcastRoomCode,
+        operatorId
+      })
+    }).catch(() => {});
+
     showToast("Operator revoked");
   };
 
@@ -2712,6 +2773,17 @@ export function useWorshipState() {
     }
     setConnectedOperators([]);
     setActiveControllerId(null);
+
+    // Sync to local HTTP LAN endpoint
+    fetch('/api/remote-sync', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        action: 'REVOKE_ALL',
+        roomCode: broadcastRoomCode
+      })
+    }).catch(() => {});
+
     showToast("All remote devices revoked");
   };
 

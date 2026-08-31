@@ -53,11 +53,16 @@ export class HostBroadcaster {
   private onOperatorsChange?: (operators: RemoteOperatorSession[]) => void;
   private onError?: (err: { type: string; message: string }) => void;
   private onReady?: () => void;
+  private onStatusChange?: (status: 'ready' | 'error' | 'disconnected') => void;
   private isDestroyed = false;
   private retryTimer: any = null;
   private retryAttempts = 0;
   private maxRetries = 5;
   private beforeUnloadHandler: (() => void) | null = null;
+
+  public get isReady(): boolean {
+    return !this.isDestroyed && !!this.peer && !this.peer.disconnected && !this.peer.destroyed;
+  }
 
   constructor(
     roomCode: string,
@@ -69,6 +74,7 @@ export class HostBroadcaster {
       onOperatorsChange?: (operators: RemoteOperatorSession[]) => void;
       onError?: (err: { type: string; message: string }) => void;
       onReady?: () => void;
+      onStatusChange?: (status: 'ready' | 'error' | 'disconnected') => void;
     }
   ) {
     this.roomCode = roomCode;
@@ -79,6 +85,7 @@ export class HostBroadcaster {
     this.onOperatorsChange = callbacks?.onOperatorsChange;
     this.onError = callbacks?.onError;
     this.onReady = callbacks?.onReady;
+    this.onStatusChange = callbacks?.onStatusChange;
     this.init();
 
     if (typeof window !== "undefined") {
@@ -118,6 +125,7 @@ export class HostBroadcaster {
       this.peer.on("open", () => {
         this.retryAttempts = 0;
         this.onReady?.();
+        this.onStatusChange?.('ready');
       });
 
       this.peer.on("connection", (conn) => {
@@ -125,6 +133,7 @@ export class HostBroadcaster {
       });
 
       this.peer.on("error", (err: any) => {
+        this.onStatusChange?.('error');
         if (err?.type === "unavailable-id") {
           if (this.retryAttempts < this.maxRetries && !this.isDestroyed) {
             this.retryAttempts++;
@@ -154,6 +163,7 @@ export class HostBroadcaster {
       });
 
       this.peer.on("disconnected", () => {
+        this.onStatusChange?.('disconnected');
         if (!this.isDestroyed && this.peer) {
           try {
             this.peer.reconnect();
@@ -674,6 +684,10 @@ export class RemoteOperatorClient {
       };
       window.addEventListener("beforeunload", this.beforeUnloadHandler);
     }
+  }
+
+  public get isConnected(): boolean {
+    return !this.isDestroyed && !!this.conn && this.conn.open;
   }
 
   private async init() {

@@ -153,6 +153,43 @@ export async function POST(request: Request) {
         }
       }
 
+      // Enforce RBAC Role Permissions on the server
+      const perms = ROLE_PERMISSIONS[session.role] || ROLE_PERMISSIONS.viewer;
+
+      if (session.role === 'viewer' && command.type !== 'PING') {
+        return NextResponse.json({ success: false, reason: "VIEWER_READ_ONLY" });
+      }
+
+      if (['PRESENTATION_NEXT', 'PRESENTATION_PREVIOUS', 'PRESENTATION_GO_LIVE', 'PRESENTATION_SELECT_ITEM', 'PRESENTATION_SELECT_SLIDE'].includes(command.type)) {
+        if (!perms.canControlSlides) {
+          return NextResponse.json({ success: false, reason: "PERMISSION_DENIED_SLIDES" });
+        }
+      }
+
+      if (['PRESENTATION_BLACKOUT', 'PRESENTATION_TEXT_MUTE', 'PRESENTATION_TEXT_SHOW'].includes(command.type)) {
+        if (!perms.canBlackout) {
+          return NextResponse.json({ success: false, reason: "PERMISSION_DENIED_BLACKOUT" });
+        }
+      }
+
+      if (['COUNTDOWN_START', 'COUNTDOWN_PAUSE', 'COUNTDOWN_RESET', 'COUNTDOWN_ADJUST'].includes(command.type)) {
+        if (!perms.canControlTimer) {
+          return NextResponse.json({ success: false, reason: "PERMISSION_DENIED_TIMER" });
+        }
+      }
+
+      if (['TICKER_TOGGLE', 'TICKER_SET_TEXT'].includes(command.type)) {
+        if (!perms.canControlTicker) {
+          return NextResponse.json({ success: false, reason: "PERMISSION_DENIED_TICKER" });
+        }
+      }
+
+      if (['REQUEST_CONTROL_LOCK', 'RELEASE_CONTROL_LOCK'].includes(command.type)) {
+        if (!perms.canRequestControlLock) {
+          return NextResponse.json({ success: false, reason: "PERMISSION_DENIED_CONTROL_LOCK" });
+        }
+      }
+
       // Handle Control Lock requests directly
       if (command.type === "REQUEST_CONTROL_LOCK") {
         room.activeControllerId = session.operatorId;
@@ -195,7 +232,18 @@ export async function POST(request: Request) {
       return NextResponse.json({ success: true, session });
     }
 
-    // 5. DESKTOP REVOKES OPERATOR
+    // 5. DESKTOP UPDATES OPERATOR ROLE
+    if (action === "UPDATE_OPERATOR_ROLE") {
+      const { operatorId, role } = body;
+      const session = room.operators.get(operatorId);
+      if (session) {
+        session.role = role as OperatorRole;
+        room.operators.set(operatorId, session);
+      }
+      return NextResponse.json({ success: true, session });
+    }
+
+    // 6. DESKTOP REVOKES OPERATOR
     if (action === "REVOKE_OPERATOR") {
       const { operatorId } = body;
       room.operators.delete(operatorId);
@@ -205,7 +253,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ success: true });
     }
 
-    // 6. DESKTOP REVOKES ALL OPERATORS
+    // 7. DESKTOP REVOKES ALL OPERATORS
     if (action === "REVOKE_ALL") {
       room.operators.clear();
       room.pendingRequests = [];

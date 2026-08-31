@@ -12,6 +12,7 @@ import { RemoteOperatorClient } from "@/lib/broadcastSync";
 import type { 
   CanonicalPresentationState, PairingResponseMessage, OperatorRole, RemoteCommandType 
 } from "@/lib/remoteControl";
+import { ROLE_PERMISSIONS } from "@/lib/remoteControl";
 import { getTextShadowCss, getFontFamilyCss } from "@/lib/lyrics";
 
 function RemoteOperatorApp() {
@@ -19,24 +20,24 @@ function RemoteOperatorApp() {
   const initialRoom = searchParams.get("room") || "sunday-worship";
   const initialToken = searchParams.get("token") || "";
 
-  // Operator Identification
-  const [operatorName, setOperatorName] = useState(() => {
-    if (typeof window !== "undefined") {
-      return localStorage.getItem("proclaim_operator_name") || "Mobile Operator";
-    }
-    return "Mobile Operator";
-  });
-  const [operatorId] = useState(() => {
-    if (typeof window !== "undefined") {
-      let saved = localStorage.getItem("proclaim_operator_id");
-      if (!saved) {
-        saved = `op_${Date.now().toString(36)}_${Math.random().toString(36).substring(2, 6)}`;
-        localStorage.setItem("proclaim_operator_id", saved);
+  // Operator Identification (SSR-safe initial defaults)
+  const [operatorName, setOperatorName] = useState("Mobile Operator");
+  const [operatorId, setOperatorId] = useState("");
+  const [isClientReady, setIsClientReady] = useState(false);
+
+  useEffect(() => {
+    try {
+      const savedName = localStorage.getItem("proclaim_operator_name") || "Mobile Operator";
+      let savedId = localStorage.getItem("proclaim_operator_id");
+      if (!savedId) {
+        savedId = `op_${Date.now().toString(36)}_${Math.random().toString(36).substring(2, 6)}`;
+        localStorage.setItem("proclaim_operator_id", savedId);
       }
-      return saved;
-    }
-    return `op_${Date.now()}`;
-  });
+      setOperatorName(savedName);
+      setOperatorId(savedId);
+    } catch {}
+    setIsClientReady(true);
+  }, []);
 
   const [roomCode, setRoomCode] = useState(initialRoom);
   const [pairingToken, setPairingToken] = useState(initialToken);
@@ -44,6 +45,7 @@ function RemoteOperatorApp() {
   const [operatorRole, setOperatorRole] = useState<OperatorRole>('operator');
   const [hasControlLock, setHasControlLock] = useState(false);
   const [activeControllerId, setActiveControllerId] = useState<string | null>(null);
+  const [isWebRtcLive, setIsWebRtcLive] = useState(false);
 
   // Canonical Presentation State from Host
   const [liveState, setLiveState] = useState<CanonicalPresentationState | null>(null);
@@ -130,20 +132,29 @@ function RemoteOperatorApp() {
     }
   };
 
-  // Immediate Auto-Pair on Mount
+  // Delayed HTTP fallback auto-pair (only if WebRTC does not connect within 3s)
   useEffect(() => {
-    pairViaHttp(initialToken, initialRoom);
-  }, []);
+    if (!isClientReady || !operatorId || isWebRtcLive) return;
 
-  // Continuous HTTP live state sync when paired
+    const timer = setTimeout(() => {
+      if (!isWebRtcLive) {
+        pairViaHttp(initialToken, initialRoom);
+      }
+    }, 3000);
+
+    return () => clearTimeout(timer);
+  }, [isClientReady, operatorId, isWebRtcLive]);
+
+  // HTTP live state sync: ONLY runs if WebRTC is NOT active
   useEffect(() => {
+    // Zero HTTP polling if WebRTC DataChannel is alive
+    if (isWebRtcLive) return;
     if (connectionStatus !== 'paired' && connectionStatus !== 'pending') return;
 
     let isCancelled = false;
     let intervalId: ReturnType<typeof setInterval> | null = null;
 
     const fetchLiveState = async () => {
-      // Pause when tab is hidden (user navigated away or closed)
       if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
       try {
         const res = await fetch(`/api/remote-sync?room=${encodeURIComponent(roomCode)}`);
@@ -151,14 +162,22 @@ function RemoteOperatorApp() {
           const data = await res.json();
           if (isCancelled) return;
 
-          // If pending and host approved us
-          if (connectionStatus === 'pending') {
-            const mySession = data.operators?.find((o: any) => o.operatorId === operatorId);
-            if (mySession && mySession.isApproved) {
+          // Sync our operator session (role updates, approval, revocation)
+          const mySession = data.operators?.find((o: any) => o.operatorId === operatorId);
+          if (mySession) {
+            if (mySession.role && mySession.role !== operatorRole) {
+              setOperatorRole(mySession.role);
+            }
+            if (mySession.isApproved && connectionStatus === 'pending') {
               setOperatorRole(mySession.role || 'operator');
               setConnectionStatus('paired');
               showToast("Approved by host desktop!");
             }
+            setHasControlLock(data.activeControllerId === operatorId || !!mySession.hasControlLock);
+          } else if (connectionStatus === 'paired' && data.operators && data.operators.length > 0) {
+            // Operator was revoked by desktop host
+            setConnectionStatus('revoked');
+            showToast("❌ Session access was revoked by host", true);
           }
 
           if (data.state) {
@@ -194,11 +213,11 @@ function RemoteOperatorApp() {
       if (intervalId) clearInterval(intervalId);
       document.removeEventListener('visibilitychange', handleVisibilityChange);
     };
-  }, [connectionStatus, roomCode, operatorId, isInPreviewMode]);
+  }, [isWebRtcLive, connectionStatus, roomCode, operatorId, isInPreviewMode]);
 
   // Initialize WebRTC Remote Operator Client (for P2P DataChannel)
   useEffect(() => {
-    if (!roomCode) return;
+    if (!roomCode || !operatorId) return;
 
     const client = new RemoteOperatorClient(
       roomCode,
@@ -207,6 +226,7 @@ function RemoteOperatorApp() {
       pairingToken,
       {
         onCanonicalState: (state) => {
+          setIsWebRtcLive(true);
           setLiveState(state);
           setActiveControllerId(state.activeControllerId);
           if (!isInPreviewMode) {
@@ -215,11 +235,12 @@ function RemoteOperatorApp() {
           }
         },
         onPairingStatus: (resp: PairingResponseMessage) => {
+          setIsWebRtcLive(true);
           if (resp.status === "approved") {
             setOperatorRole(resp.role);
             setHasControlLock(resp.hasControlLock);
             setConnectionStatus("paired");
-            showToast("Connected to Proclaim Sanctuary!");
+            showToast("Connected via direct WebRTC!");
           } else if (resp.status === "pending") {
             setConnectionStatus("pending");
             showToast("Waiting for host desktop approval...");
@@ -230,8 +251,14 @@ function RemoteOperatorApp() {
           }
         },
         onStatusChange: (status) => {
-          if (status === 'paired' || status === 'pending') {
+          if (status === 'paired' || status === 'connected') {
+            setIsWebRtcLive(true);
+            setConnectionStatus(status === 'connected' ? 'paired' : status);
+          } else if (status === 'pending') {
+            setIsWebRtcLive(true);
             setConnectionStatus(status);
+          } else if (status === 'disconnected') {
+            setIsWebRtcLive(false);
           }
         },
         onControlLockChange: (hasLock, controllerId) => {
@@ -241,8 +268,8 @@ function RemoteOperatorApp() {
             showToast("🔒 You now have active control");
           }
         },
-        onErrorMessage: (errMsg) => {
-          // Silent or soft toast
+        onErrorMessage: () => {
+          setIsWebRtcLive(false);
         }
       }
     );
@@ -252,11 +279,23 @@ function RemoteOperatorApp() {
     return () => {
       client.destroy();
       clientRef.current = null;
+      setIsWebRtcLive(false);
     };
   }, [roomCode, operatorId]);
 
-  // Dispatch Remote Command via Dual-Transport (HTTP LAN API + WebRTC)
+  // Dispatch Remote Command (Prioritizes WebRTC DataChannel; fallbacks to HTTP LAN API if offline)
   const sendCommand = async (type: RemoteCommandType, params?: any) => {
+    // 1. If WebRTC is connected, send instantly over P2P DataChannel (0 HTTP requests)
+    if (isWebRtcLive && clientRef.current && clientRef.current.isConnected) {
+      try {
+        await clientRef.current.sendCommand(type, params);
+        return;
+      } catch {
+        // Fall through to HTTP fallback if WebRTC send threw an exception
+      }
+    }
+
+    // 2. Fallback: Dispatch over local HTTP LAN API
     const requestId = `cmd_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
     const payload = {
       type,
@@ -266,7 +305,6 @@ function RemoteOperatorApp() {
       params
     };
 
-    // 1. Dispatch over local HTTP LAN API
     try {
       fetch("/api/remote-sync", {
         method: "POST",
@@ -282,19 +320,30 @@ function RemoteOperatorApp() {
         }
       }).catch(() => {});
     } catch {}
-
-    // 2. Also dispatch over WebRTC DataConnection if open
-    if (clientRef.current) {
-      try {
-        await clientRef.current.sendCommand(type, params);
-      } catch {}
-    }
   };
 
   // Quick Action Handlers
-  const handleNext = () => sendCommand('PRESENTATION_NEXT');
-  const handlePrev = () => sendCommand('PRESENTATION_PREVIOUS');
+  const handleNext = () => {
+    if (!currentPermissions.canControlSlides) {
+      showToast("👁️ View-Only Mode: Cannot change slides");
+      return;
+    }
+    sendCommand('PRESENTATION_NEXT');
+  };
+
+  const handlePrev = () => {
+    if (!currentPermissions.canControlSlides) {
+      showToast("👁️ View-Only Mode: Cannot change slides");
+      return;
+    }
+    sendCommand('PRESENTATION_PREVIOUS');
+  };
+
   const handleGoLivePreview = () => {
+    if (!currentPermissions.canControlSlides) {
+      showToast("👁️ View-Only Mode: Cannot push slides live");
+      return;
+    }
     if (!previewItemId) return;
     sendCommand('PRESENTATION_GO_LIVE', {
       itemId: previewItemId,
@@ -305,6 +354,10 @@ function RemoteOperatorApp() {
   };
 
   const handleToggleHideText = () => {
+    if (!currentPermissions.canBlackout) {
+      showToast("🚫 Permission Denied: Cannot blackout screen");
+      return;
+    }
     if (liveState?.isTextHidden) {
       sendCommand('PRESENTATION_TEXT_SHOW');
     } else {
@@ -313,6 +366,10 @@ function RemoteOperatorApp() {
   };
 
   const handleToggleTimer = () => {
+    if (!currentPermissions.canControlTimer) {
+      showToast("🚫 Permission Denied: Cannot control timer");
+      return;
+    }
     if (liveState?.isCountdownRunning) {
       sendCommand('COUNTDOWN_PAUSE');
     } else {
@@ -321,24 +378,43 @@ function RemoteOperatorApp() {
   };
 
   const handleAdjustTimer = (delta: number) => {
+    if (!currentPermissions.canControlTimer) {
+      showToast("🚫 Permission Denied: Cannot adjust timer");
+      return;
+    }
     sendCommand('COUNTDOWN_ADJUST', { delta });
   };
 
   const handleResetTimer = () => {
+    if (!currentPermissions.canControlTimer) {
+      showToast("🚫 Permission Denied: Cannot reset timer");
+      return;
+    }
     sendCommand('COUNTDOWN_RESET', { seconds: 300 });
   };
 
   const handleToggleTicker = () => {
+    if (!currentPermissions.canControlTicker) {
+      showToast("🚫 Permission Denied: Cannot toggle ticker");
+      return;
+    }
     sendCommand('TICKER_TOGGLE');
   };
 
   const handleRequestControl = () => {
+    if (!currentPermissions.canRequestControlLock) {
+      showToast("🚫 Permission Denied: Cannot request control lock");
+      return;
+    }
     sendCommand('REQUEST_CONTROL_LOCK');
   };
 
   const handleReleaseControl = () => {
     sendCommand('RELEASE_CONTROL_LOCK');
   };
+
+  // RBAC Permissions for the current operator
+  const currentPermissions = ROLE_PERMISSIONS[operatorRole] || ROLE_PERMISSIONS.viewer;
 
   // Touch Swipe on Live Preview Card
   const handleTouchStart = (e: React.TouchEvent) => {
@@ -350,9 +426,17 @@ function RemoteOperatorApp() {
     const diff = e.changedTouches[0].clientX - swipeStartX;
     if (diff > 50) {
       // Swiped Right -> Previous
+      if (!currentPermissions.canControlSlides) {
+        showToast("👁️ View-Only Mode: Cannot change slides");
+        return;
+      }
       handlePrev();
     } else if (diff < -50) {
       // Swiped Left -> Next
+      if (!currentPermissions.canControlSlides) {
+        showToast("👁️ View-Only Mode: Cannot change slides");
+        return;
+      }
       handleNext();
     }
     setSwipeStartX(null);
@@ -373,7 +457,23 @@ function RemoteOperatorApp() {
     return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
   };
 
-  const isConnectedAndPaired = connectionStatus === 'paired' || (liveState !== null && connectionStatus !== 'revoked');
+  const isConnectedAndPaired = connectionStatus === 'paired' || (liveState !== null && (connectionStatus as string) !== 'revoked');
+
+  const getRoleBadge = () => {
+    switch (operatorRole) {
+      case 'admin':
+        return { label: 'Admin', color: 'bg-purple-500/20 text-purple-300 border-purple-500/40' };
+      case 'senior_operator':
+        return { label: 'Sr. Operator', color: 'bg-cyan-500/20 text-cyan-300 border-cyan-500/40' };
+      case 'operator':
+        return { label: 'Operator', color: 'bg-indigo-500/20 text-indigo-300 border-indigo-500/40' };
+      case 'viewer':
+      default:
+        return { label: 'Viewer (Read-Only)', color: 'bg-amber-500/20 text-amber-300 border-amber-500/40' };
+    }
+  };
+
+  const roleBadge = getRoleBadge();
 
   return (
     <div className="min-h-screen bg-neutral-950 text-neutral-100 font-sans flex flex-col select-none pb-28">
@@ -402,9 +502,14 @@ function RemoteOperatorApp() {
         {/* Connection & Role Badge */}
         <div className="flex items-center gap-1.5">
           {isConnectedAndPaired ? (
-            <span className="px-2.5 py-1 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/40 text-[10px] font-black uppercase tracking-wider flex items-center gap-1">
-              <Radio size={11} className="animate-pulse" /> Live
-            </span>
+            <div className="flex items-center gap-1.5">
+              <span className={`px-2.5 py-0.5 rounded-full border text-[10px] font-bold ${roleBadge.color}`}>
+                {roleBadge.label}
+              </span>
+              <span className="px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/40 text-[10px] font-black uppercase tracking-wider flex items-center gap-1">
+                <Radio size={10} className="animate-pulse" /> Live
+              </span>
+            </div>
           ) : connectionStatus === 'pending' ? (
             <span className="px-2.5 py-1 rounded-full bg-amber-500/20 text-amber-400 border border-amber-500/40 text-[10px] font-bold animate-pulse">
               Approval Pending
@@ -416,6 +521,16 @@ function RemoteOperatorApp() {
           )}
         </div>
       </header>
+
+      {/* Viewer Read-Only Warning Notice Banner */}
+      {isConnectedAndPaired && !currentPermissions.canControlSlides && (
+        <div className="px-4 py-2 bg-amber-950/60 border-b border-amber-700/50 text-amber-300 text-xs font-semibold flex items-center justify-between">
+          <div className="flex items-center gap-1.5">
+            <AlertCircle size={14} className="text-amber-400 shrink-0" />
+            <span>View-Only Mode: Ask the desktop operator to upgrade your role to control slides.</span>
+          </div>
+        </div>
+      )}
 
       {/* Control Lock Status Banner */}
       {isConnectedAndPaired && (
@@ -516,7 +631,7 @@ function RemoteOperatorApp() {
                 <span>Connection Error</span>
               </div>
               <p className="text-[11px] text-rose-300 font-mono break-all leading-relaxed">{errorDetail}</p>
-              <p className="text-[10px] text-rose-400/70 pt-0.5">Attempting: POST /api/remote-sync on {typeof window !== 'undefined' ? window.location.host : 'server'}</p>
+              <p className="text-[10px] text-rose-400/70 pt-0.5" suppressHydrationWarning>Attempting: POST /api/remote-sync on {typeof window !== 'undefined' ? window.location.host : 'server'}</p>
             </div>
           )}
 
@@ -777,6 +892,14 @@ function RemoteOperatorApp() {
                           <button
                             type="button"
                             onClick={() => {
+                              if (!currentPermissions.canControlSlides) {
+                                setPreviewItemId(item.id);
+                                setPreviewSlideIndex(0);
+                                setIsInPreviewMode(true);
+                                setActiveTab('live');
+                                showToast(`Previewing: ${item.title} (View-Only Mode)`);
+                                return;
+                              }
                               sendCommand('PRESENTATION_GO_LIVE', {
                                 itemId: item.id,
                                 slideIndex: 0
@@ -786,10 +909,12 @@ function RemoteOperatorApp() {
                             className={`px-2.5 py-1 rounded-lg font-black text-[10px] transition-colors ${
                               isItemLive 
                                 ? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/40" 
-                                : "bg-emerald-600 hover:bg-emerald-500 text-white shadow-sm"
+                                : !currentPermissions.canControlSlides
+                                  ? "bg-neutral-800 text-neutral-400 hover:bg-neutral-700"
+                                  : "bg-emerald-600 hover:bg-emerald-500 text-white shadow-sm"
                             }`}
                           >
-                            {isItemLive ? "● LIVE" : "Go Live"}
+                            {isItemLive ? "● LIVE" : !currentPermissions.canControlSlides ? "Preview" : "Go Live"}
                           </button>
                         </div>
                       </div>
@@ -806,6 +931,14 @@ function RemoteOperatorApp() {
                                 key={sIdx}
                                 type="button"
                                 onClick={() => {
+                                  if (!currentPermissions.canControlSlides) {
+                                    setPreviewItemId(item.id);
+                                    setPreviewSlideIndex(sIdx);
+                                    setIsInPreviewMode(true);
+                                    setActiveTab('live');
+                                    showToast(`Previewing slide ${sIdx + 1}`);
+                                    return;
+                                  }
                                   sendCommand('PRESENTATION_GO_LIVE', {
                                     itemId: item.id,
                                     slideIndex: sIdx
@@ -845,27 +978,35 @@ function RemoteOperatorApp() {
                   <button
                     type="button"
                     onClick={handleToggleHideText}
+                    disabled={!currentPermissions.canBlackout}
                     className={`p-3.5 rounded-xl font-black text-xs flex flex-col items-center justify-center gap-1.5 transition-all shadow-md ${
-                      liveState?.isTextHidden
-                        ? "bg-amber-500 text-black ring-2 ring-amber-400"
-                        : "bg-neutral-800 text-white hover:bg-neutral-700 border border-neutral-700"
+                      !currentPermissions.canBlackout
+                        ? "bg-neutral-900/60 text-neutral-500 border border-neutral-800 cursor-not-allowed opacity-50"
+                        : liveState?.isTextHidden
+                          ? "bg-amber-500 text-black ring-2 ring-amber-400"
+                          : "bg-neutral-800 text-white hover:bg-neutral-700 border border-neutral-700"
                     }`}
                   >
                     <EyeOff size={20} />
                     <span>{liveState?.isTextHidden ? "SHOW TEXT" : "HIDE TEXT (BLACKOUT)"}</span>
+                    {!currentPermissions.canBlackout && <span className="text-[9px] font-normal text-neutral-500">Requires Operator Role</span>}
                   </button>
 
                   <button
                     type="button"
                     onClick={handleToggleTicker}
+                    disabled={!currentPermissions.canControlTicker}
                     className={`p-3.5 rounded-xl font-black text-xs flex flex-col items-center justify-center gap-1.5 transition-all shadow-md ${
-                      liveState?.tickerConfig?.enabled
-                        ? "bg-indigo-600 text-white ring-2 ring-indigo-400"
-                        : "bg-neutral-800 text-white hover:bg-neutral-700 border border-neutral-700"
+                      !currentPermissions.canControlTicker
+                        ? "bg-neutral-900/60 text-neutral-500 border border-neutral-800 cursor-not-allowed opacity-50"
+                        : liveState?.tickerConfig?.enabled
+                          ? "bg-indigo-600 text-white ring-2 ring-indigo-400"
+                          : "bg-neutral-800 text-white hover:bg-neutral-700 border border-neutral-700"
                     }`}
                   >
                     <Megaphone size={20} />
                     <span>{liveState?.tickerConfig?.enabled ? "HIDE TICKER" : "SHOW TICKER"}</span>
+                    {!currentPermissions.canControlTicker && <span className="text-[9px] font-normal text-neutral-500">Requires Operator Role</span>}
                   </button>
                 </div>
               </div>
@@ -885,17 +1026,25 @@ function RemoteOperatorApp() {
                   <button
                     type="button"
                     onClick={() => handleAdjustTimer(-60)}
-                    className="py-2.5 rounded-xl bg-neutral-800 hover:bg-neutral-700 text-white font-black text-xs transition-colors"
+                    disabled={!currentPermissions.canControlTimer}
+                    className={`py-2.5 rounded-xl font-black text-xs transition-colors ${
+                      !currentPermissions.canControlTimer
+                        ? "bg-neutral-900 text-neutral-600 cursor-not-allowed opacity-50"
+                        : "bg-neutral-800 hover:bg-neutral-700 text-white"
+                    }`}
                   >
                     -1m
                   </button>
                   <button
                     type="button"
                     onClick={handleToggleTimer}
+                    disabled={!currentPermissions.canControlTimer}
                     className={`py-2.5 rounded-xl font-black text-xs flex items-center justify-center gap-1 transition-colors ${
-                      liveState?.isCountdownRunning
-                        ? "bg-amber-500 text-black"
-                        : "bg-emerald-600 text-white"
+                      !currentPermissions.canControlTimer
+                        ? "bg-neutral-900 text-neutral-600 cursor-not-allowed opacity-50"
+                        : liveState?.isCountdownRunning
+                          ? "bg-amber-500 text-black"
+                          : "bg-emerald-600 text-white"
                     }`}
                   >
                     {liveState?.isCountdownRunning ? <Pause size={14} /> : <Play size={14} />}
@@ -904,14 +1053,24 @@ function RemoteOperatorApp() {
                   <button
                     type="button"
                     onClick={() => handleAdjustTimer(60)}
-                    className="py-2.5 rounded-xl bg-neutral-800 hover:bg-neutral-700 text-white font-black text-xs transition-colors"
+                    disabled={!currentPermissions.canControlTimer}
+                    className={`py-2.5 rounded-xl font-black text-xs transition-colors ${
+                      !currentPermissions.canControlTimer
+                        ? "bg-neutral-900 text-neutral-600 cursor-not-allowed opacity-50"
+                        : "bg-neutral-800 hover:bg-neutral-700 text-white"
+                    }`}
                   >
                     +1m
                   </button>
                   <button
                     type="button"
                     onClick={handleResetTimer}
-                    className="py-2.5 rounded-xl bg-neutral-800 hover:bg-neutral-700 text-neutral-300 font-bold text-xs flex items-center justify-center transition-colors"
+                    disabled={!currentPermissions.canControlTimer}
+                    className={`py-2.5 rounded-xl font-bold text-xs flex items-center justify-center transition-colors ${
+                      !currentPermissions.canControlTimer
+                        ? "bg-neutral-900 text-neutral-600 cursor-not-allowed opacity-50"
+                        : "bg-neutral-800 hover:bg-neutral-700 text-neutral-300"
+                    }`}
                   >
                     <RotateCcw size={14} />
                   </button>
@@ -929,7 +1088,12 @@ function RemoteOperatorApp() {
             <button
               type="button"
               onClick={handlePrev}
-              className="py-4 rounded-2xl bg-neutral-900 hover:bg-neutral-800 active:scale-95 text-white font-black text-sm flex items-center justify-center gap-1.5 border border-neutral-700 shadow-lg transition-transform"
+              disabled={!currentPermissions.canControlSlides}
+              className={`py-4 rounded-2xl font-black text-sm flex items-center justify-center gap-1.5 border shadow-lg transition-transform ${
+                currentPermissions.canControlSlides
+                  ? "bg-neutral-900 hover:bg-neutral-800 active:scale-95 text-white border-neutral-700"
+                  : "bg-neutral-900/50 text-neutral-500 border-neutral-800 cursor-not-allowed opacity-50"
+              }`}
             >
               <ChevronLeft size={20} />
               <span>PREV</span>
@@ -937,27 +1101,39 @@ function RemoteOperatorApp() {
 
             <button
               type="button"
+              disabled={!currentPermissions.canControlSlides}
               onClick={() => {
+                if (!currentPermissions.canControlSlides) {
+                  showToast("👁️ View-Only Mode");
+                  return;
+                }
                 if (isInPreviewMode) {
                   handleGoLivePreview();
                 } else {
                   showToast("Slide is live!");
                 }
               }}
-              className={`py-4 rounded-2xl active:scale-95 font-black text-sm flex items-center justify-center gap-1.5 shadow-xl transition-all ${
-                isInPreviewMode
-                  ? "bg-amber-500 text-black ring-4 ring-amber-500/30 animate-pulse"
-                  : "bg-emerald-600 hover:bg-emerald-500 text-white shadow-emerald-950/50"
+              className={`py-4 rounded-2xl font-black text-sm flex items-center justify-center gap-1.5 shadow-xl transition-all ${
+                !currentPermissions.canControlSlides
+                  ? "bg-neutral-800 text-neutral-400 border border-neutral-700 cursor-not-allowed opacity-50"
+                  : isInPreviewMode
+                    ? "bg-amber-500 text-black ring-4 ring-amber-500/30 animate-pulse active:scale-95"
+                    : "bg-emerald-600 hover:bg-emerald-500 text-white shadow-emerald-950/50 active:scale-95"
               }`}
             >
-              <span className="w-2.5 h-2.5 rounded-full bg-white animate-ping mr-0.5"></span>
-              <span>{isInPreviewMode ? "GO LIVE" : "LIVE"}</span>
+              {currentPermissions.canControlSlides && <span className="w-2.5 h-2.5 rounded-full bg-white animate-ping mr-0.5"></span>}
+              <span>{!currentPermissions.canControlSlides ? "VIEW ONLY" : isInPreviewMode ? "GO LIVE" : "LIVE"}</span>
             </button>
 
             <button
               type="button"
               onClick={handleNext}
-              className="py-4 rounded-2xl bg-indigo-600 hover:bg-indigo-500 active:scale-95 text-white font-black text-sm flex items-center justify-center gap-1.5 shadow-lg shadow-indigo-950/50 border border-indigo-400/40 transition-transform"
+              disabled={!currentPermissions.canControlSlides}
+              className={`py-4 rounded-2xl font-black text-sm flex items-center justify-center gap-1.5 shadow-lg border transition-transform ${
+                currentPermissions.canControlSlides
+                  ? "bg-indigo-600 hover:bg-indigo-500 active:scale-95 text-white shadow-indigo-950/50 border-indigo-400/40"
+                  : "bg-neutral-900/50 text-neutral-500 border-neutral-800 cursor-not-allowed opacity-50"
+              }`}
             >
               <span>NEXT</span>
               <ChevronRight size={20} />

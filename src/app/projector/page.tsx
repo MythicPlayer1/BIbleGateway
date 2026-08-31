@@ -77,16 +77,8 @@ export default function Projector() {
   // Live Scrolling Ticker State
   const [ticker, setTicker] = useState<TickerConfig>(DEFAULT_TICKER_CONFIG);
 
-  // Display & Typography Customization State (with LocalStorage persistence)
-  const [displayConfig, setDisplayConfig] = useState<ProjectorDisplayConfig>(() => {
-    if (typeof window !== 'undefined') {
-      try {
-        const saved = localStorage.getItem('worship_display_config');
-        if (saved) return { ...DEFAULT_DISPLAY_CONFIG, ...JSON.parse(saved) };
-      } catch { }
-    }
-    return DEFAULT_DISPLAY_CONFIG;
-  });
+  // Display & Typography Customization State (SSR-safe initial defaults, hydrated via useEffect)
+  const [displayConfig, setDisplayConfig] = useState<ProjectorDisplayConfig>(DEFAULT_DISPLAY_CONFIG);
 
   const [autoFitScale, setAutoFitScale] = useState<number>(1);
   const contentContainerRef = useRef<HTMLDivElement | null>(null);
