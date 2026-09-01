@@ -6,7 +6,8 @@ import { motion, AnimatePresence } from "framer-motion";
 import { 
   Smartphone, Radio, Wifi, Lock, Unlock, Play, Pause, RotateCcw, 
   EyeOff, Eye, ChevronLeft, ChevronRight, Sparkles, AlertCircle, 
-  CheckCircle2, Layers, Clock, Megaphone, Send, ShieldAlert, Monitor
+  CheckCircle2, Layers, Clock, Megaphone, Send, ShieldAlert, Monitor, Zap,
+  Cast
 } from "lucide-react";
 import { RemoteOperatorClient } from "@/lib/broadcastSync";
 import type { 
@@ -43,6 +44,7 @@ function RemoteOperatorApp() {
   const [pairingToken, setPairingToken] = useState(initialToken);
   const [connectionStatus, setConnectionStatus] = useState<'connecting' | 'connected' | 'disconnected' | 'pending' | 'paired' | 'revoked'>('connecting');
   const [operatorRole, setOperatorRole] = useState<OperatorRole>('operator');
+  const currentPermissions = ROLE_PERMISSIONS[operatorRole] || ROLE_PERMISSIONS.viewer;
   const [hasControlLock, setHasControlLock] = useState(false);
   const [activeControllerId, setActiveControllerId] = useState<string | null>(null);
   const [isWebRtcLive, setIsWebRtcLive] = useState(false);
@@ -54,20 +56,77 @@ function RemoteOperatorApp() {
   const [previewItemId, setPreviewItemId] = useState<string | null>(null);
   const [previewSlideIndex, setPreviewSlideIndex] = useState<number>(0);
   const [isInPreviewMode, setIsInPreviewMode] = useState(false);
+  const [isScreenSharing, setIsScreenSharing] = useState(false);
 
   // UI state
   const [activeTab, setActiveTab] = useState<'live' | 'schedule' | 'actions'>('live');
   const [feedbackToast, setFeedbackToast] = useState<string | null>(null);
   const [errorDetail, setErrorDetail] = useState<string | null>(null);
   const [swipeStartX, setSwipeStartX] = useState<number | null>(null);
+  const [isWakeLocked, setIsWakeLocked] = useState(false);
+  const [pingMs, setPingMs] = useState<number | null>(null);
 
   const clientRef = useRef<RemoteOperatorClient | null>(null);
   const toastTimeoutRef = useRef<any>(null);
+  const lastCommandTimeRef = useRef<number>(0);
+  const wakeLockSentinelRef = useRef<any>(null);
+
+  // Industrial Haptic Feedback Trigger
+  const triggerHaptic = (type: 'tap' | 'heavy' | 'double' | 'error' = 'tap') => {
+    if (typeof navigator === 'undefined' || !navigator.vibrate) return;
+    try {
+      if (type === 'tap') navigator.vibrate(18);
+      else if (type === 'heavy') navigator.vibrate(35);
+      else if (type === 'double') navigator.vibrate([20, 40, 20]);
+      else if (type === 'error') navigator.vibrate([40, 60, 40]);
+    } catch {}
+  };
+
+  // Industrial Screen Wake Lock (Keeps phone screen ON during worship services)
+  useEffect(() => {
+    if (typeof navigator === 'undefined' || !('wakeLock' in navigator)) return;
+
+    const requestWakeLock = async () => {
+      try {
+        if (document.visibilityState === 'visible') {
+          const sentinel = await (navigator as any).wakeLock.request('screen');
+          wakeLockSentinelRef.current = sentinel;
+          setIsWakeLocked(true);
+          sentinel.addEventListener('release', () => {
+            setIsWakeLocked(false);
+          });
+        }
+      } catch {
+        setIsWakeLocked(false);
+      }
+    };
+
+    requestWakeLock();
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        requestWakeLock();
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      if (wakeLockSentinelRef.current) {
+        try { wakeLockSentinelRef.current.release(); } catch {}
+        wakeLockSentinelRef.current = null;
+      }
+    };
+  }, []);
 
   const showToast = (msg: string, isError = false) => {
     if (toastTimeoutRef.current) clearTimeout(toastTimeoutRef.current);
     setFeedbackToast(msg);
-    if (isError) setErrorDetail(msg);
+    if (isError) {
+      setErrorDetail(msg);
+      triggerHaptic('error');
+    }
     toastTimeoutRef.current = setTimeout(() => setFeedbackToast(null), isError ? 6000 : 2500);
   };
 
@@ -132,7 +191,7 @@ function RemoteOperatorApp() {
     }
   };
 
-  // Delayed HTTP fallback auto-pair (only if WebRTC does not connect within 3s)
+  // Fast HTTP fallback auto-pair (if WebRTC does not connect within 800ms)
   useEffect(() => {
     if (!isClientReady || !operatorId || isWebRtcLive) return;
 
@@ -140,7 +199,7 @@ function RemoteOperatorApp() {
       if (!isWebRtcLive) {
         pairViaHttp(initialToken, initialRoom);
       }
-    }, 3000);
+    }, 800);
 
     return () => clearTimeout(timer);
   }, [isClientReady, operatorId, isWebRtcLive]);
@@ -182,6 +241,9 @@ function RemoteOperatorApp() {
 
           if (data.state) {
             setLiveState(data.state);
+            if (data.state.updatedAt) {
+              setPingMs(Math.max(12, Math.min(999, Date.now() - data.state.updatedAt)));
+            }
             setActiveControllerId(data.state.activeControllerId || null);
             if (!isInPreviewMode) {
               setPreviewItemId(data.state.activeItemId);
@@ -228,6 +290,10 @@ function RemoteOperatorApp() {
         onCanonicalState: (state) => {
           setIsWebRtcLive(true);
           setLiveState(state);
+          if (state.updatedAt) {
+            const lat = Math.max(1, Math.min(999, Date.now() - state.updatedAt));
+            setPingMs(lat > 3000 ? 4 : lat);
+          }
           setActiveControllerId(state.activeControllerId);
           if (!isInPreviewMode) {
             setPreviewItemId(state.activeItemId);
@@ -240,6 +306,7 @@ function RemoteOperatorApp() {
             setOperatorRole(resp.role);
             setHasControlLock(resp.hasControlLock);
             setConnectionStatus("paired");
+            triggerHaptic('double');
             showToast("Connected via direct WebRTC!");
           } else if (resp.status === "pending") {
             setConnectionStatus("pending");
@@ -265,6 +332,7 @@ function RemoteOperatorApp() {
           setHasControlLock(hasLock);
           setActiveControllerId(controllerId);
           if (hasLock) {
+            triggerHaptic('double');
             showToast("🔒 You now have active control");
           }
         },
@@ -285,6 +353,11 @@ function RemoteOperatorApp() {
 
   // Dispatch Remote Command (Prioritizes WebRTC DataChannel; fallbacks to HTTP LAN API if offline)
   const sendCommand = async (type: RemoteCommandType, params?: any) => {
+    // Rapid-tap safety guard: avoid accidental double-skipping
+    const now = Date.now();
+    if (now - lastCommandTimeRef.current < 90) return;
+    lastCommandTimeRef.current = now;
+
     // 1. If WebRTC is connected, send instantly over P2P DataChannel (0 HTTP requests)
     if (isWebRtcLive && clientRef.current && clientRef.current.isConnected) {
       try {
@@ -328,6 +401,38 @@ function RemoteOperatorApp() {
       showToast("👁️ View-Only Mode: Cannot change slides");
       return;
     }
+    triggerHaptic('tap');
+
+    // Smart Deterministic Schedule Item Navigation
+    if (liveState && liveState.scheduleItems && liveState.scheduleItems.length > 0) {
+      const items = liveState.scheduleItems;
+      const curItemIdx = items.findIndex(i => i.id === liveState.activeItemId);
+      const curItem = curItemIdx >= 0 ? items[curItemIdx] : items[0];
+      const curSlideIdx = liveState.activeSlideIndex ?? 0;
+      const totalSlides = curItem?.slides?.length || curItem?.slideCount || 1;
+
+      if (curSlideIdx < totalSlides - 1) {
+        // Next slide in current item
+        const nextSlide = curSlideIdx + 1;
+        setLiveState(prev => prev ? { ...prev, activeSlideIndex: nextSlide } : prev);
+        sendCommand('PRESENTATION_GO_LIVE', {
+          itemId: curItem.id,
+          slideIndex: nextSlide
+        });
+        return;
+      } else if (curItemIdx < items.length - 1) {
+        // Advance to next song/item in schedule
+        const nextItem = items[curItemIdx + 1];
+        setLiveState(prev => prev ? { ...prev, activeItemId: nextItem.id, activeSlideIndex: 0 } : prev);
+        sendCommand('PRESENTATION_GO_LIVE', {
+          itemId: nextItem.id,
+          slideIndex: 0
+        });
+        showToast(`Jumped to: ${nextItem.title}`);
+        return;
+      }
+    }
+
     sendCommand('PRESENTATION_NEXT');
   };
 
@@ -336,6 +441,39 @@ function RemoteOperatorApp() {
       showToast("👁️ View-Only Mode: Cannot change slides");
       return;
     }
+    triggerHaptic('tap');
+
+    // Smart Deterministic Schedule Item Navigation (Backwards)
+    if (liveState && liveState.scheduleItems && liveState.scheduleItems.length > 0) {
+      const items = liveState.scheduleItems;
+      const curItemIdx = items.findIndex(i => i.id === liveState.activeItemId);
+      const curItem = curItemIdx >= 0 ? items[curItemIdx] : items[0];
+      const curSlideIdx = liveState.activeSlideIndex ?? 0;
+
+      if (curSlideIdx > 0) {
+        // Previous slide in current item
+        const prevSlide = curSlideIdx - 1;
+        setLiveState(prev => prev ? { ...prev, activeSlideIndex: prevSlide } : prev);
+        sendCommand('PRESENTATION_GO_LIVE', {
+          itemId: curItem.id,
+          slideIndex: prevSlide
+        });
+        return;
+      } else if (curItemIdx > 0) {
+        // Back to previous song/item in schedule
+        const prevItem = items[curItemIdx - 1];
+        const prevSlidesCount = prevItem?.slides?.length || prevItem?.slideCount || 1;
+        const targetSlide = Math.max(0, prevSlidesCount - 1);
+        setLiveState(prev => prev ? { ...prev, activeItemId: prevItem.id, activeSlideIndex: targetSlide } : prev);
+        sendCommand('PRESENTATION_GO_LIVE', {
+          itemId: prevItem.id,
+          slideIndex: targetSlide
+        });
+        showToast(`Jumped to: ${prevItem.title}`);
+        return;
+      }
+    }
+
     sendCommand('PRESENTATION_PREVIOUS');
   };
 
@@ -345,6 +483,7 @@ function RemoteOperatorApp() {
       return;
     }
     if (!previewItemId) return;
+    triggerHaptic('heavy');
     sendCommand('PRESENTATION_GO_LIVE', {
       itemId: previewItemId,
       slideIndex: previewSlideIndex
@@ -358,6 +497,7 @@ function RemoteOperatorApp() {
       showToast("🚫 Permission Denied: Cannot blackout screen");
       return;
     }
+    triggerHaptic('double');
     if (liveState?.isTextHidden) {
       sendCommand('PRESENTATION_TEXT_SHOW');
     } else {
@@ -370,6 +510,7 @@ function RemoteOperatorApp() {
       showToast("🚫 Permission Denied: Cannot control timer");
       return;
     }
+    triggerHaptic('tap');
     if (liveState?.isCountdownRunning) {
       sendCommand('COUNTDOWN_PAUSE');
     } else {
@@ -382,6 +523,7 @@ function RemoteOperatorApp() {
       showToast("🚫 Permission Denied: Cannot adjust timer");
       return;
     }
+    triggerHaptic('tap');
     sendCommand('COUNTDOWN_ADJUST', { delta });
   };
 
@@ -390,8 +532,49 @@ function RemoteOperatorApp() {
       showToast("🚫 Permission Denied: Cannot reset timer");
       return;
     }
+    triggerHaptic('tap');
     sendCommand('COUNTDOWN_RESET', { seconds: 300 });
   };
+
+  const handleToggleScreenShare = async () => {
+    triggerHaptic('heavy');
+    if (isScreenSharing) {
+      clientRef.current?.stopScreenShare();
+      setIsScreenSharing(false);
+      showToast("⏹️ Screen share stopped");
+    } else {
+      showToast("🖥️ Opening screen & audio share...");
+      const res = await clientRef.current?.startScreenShare();
+      if (res?.success) {
+        setIsScreenSharing(true);
+        showToast("🔴 Screen + Audio live on projector!");
+      } else {
+        showToast(`❌ ${res?.error || "Screen share cancelled"}`);
+      }
+    }
+  };
+
+  // Hardware Bluetooth Clicker & Keyboard Listener (Space, Arrow keys, PageUp/Down)
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      const tag = (e.target as HTMLElement)?.tagName?.toLowerCase();
+      if (tag === 'input' || tag === 'textarea' || tag === 'select') return;
+
+      if (e.key === 'ArrowRight' || e.key === 'ArrowDown' || e.key === 'PageDown' || e.key === ' ') {
+        e.preventDefault();
+        handleNext();
+      } else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp' || e.key === 'PageUp' || e.key === 'Backspace') {
+        e.preventDefault();
+        handlePrev();
+      } else if (e.key === 'b' || e.key === 'B' || e.key === '.') {
+        e.preventDefault();
+        handleToggleHideText();
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [currentPermissions, liveState, isWebRtcLive, isInPreviewMode, previewItemId, previewSlideIndex]);
 
   const handleToggleTicker = () => {
     if (!currentPermissions.canControlTicker) {
@@ -412,9 +595,6 @@ function RemoteOperatorApp() {
   const handleReleaseControl = () => {
     sendCommand('RELEASE_CONTROL_LOCK');
   };
-
-  // RBAC Permissions for the current operator
-  const currentPermissions = ROLE_PERMISSIONS[operatorRole] || ROLE_PERMISSIONS.viewer;
 
   // Touch Swipe on Live Preview Card
   const handleTouchStart = (e: React.TouchEvent) => {
@@ -476,9 +656,9 @@ function RemoteOperatorApp() {
   const roleBadge = getRoleBadge();
 
   return (
-    <div className="min-h-screen bg-neutral-950 text-neutral-100 font-sans flex flex-col select-none pb-28">
+    <div className="h-dvh max-h-dvh h-screen max-h-screen bg-neutral-950 text-neutral-100 font-sans flex flex-col select-none overflow-hidden">
       {/* Top Mobile Operator Header */}
-      <header className="sticky top-0 z-40 bg-neutral-900/90 backdrop-blur-md border-b border-neutral-800 px-4 py-3 flex items-center justify-between shadow-lg">
+      <header className="shrink-0 z-40 bg-neutral-900/95 backdrop-blur-md border-b border-neutral-800 px-4 py-2.5 flex items-center justify-between shadow-lg">
         <div className="flex items-center gap-2.5">
           <div className="p-1.5 rounded-xl bg-indigo-600/30 text-indigo-400 border border-indigo-500/40">
             <Smartphone size={18} />
@@ -499,15 +679,31 @@ function RemoteOperatorApp() {
           </div>
         </div>
 
-        {/* Connection & Role Badge */}
+        {/* Connection, WakeLock, Ping & Role Badge */}
         <div className="flex items-center gap-1.5">
+          {isWakeLocked && (
+            <span
+              title="Screen Wake Lock Active (Screen will stay awake during worship)"
+              className="p-1.5 rounded-lg bg-amber-500/20 text-amber-300 border border-amber-500/30 flex items-center justify-center"
+            >
+              <Zap size={12} className="fill-amber-400 text-amber-400" />
+            </span>
+          )}
+
           {isConnectedAndPaired ? (
             <div className="flex items-center gap-1.5">
+              {isWebRtcLive ? (
+                <span className="px-2 py-0.5 rounded-full bg-emerald-950/90 text-emerald-300 border border-emerald-500/40 text-[9px] font-mono font-black flex items-center gap-1">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+                  {pingMs ? `${pingMs}ms` : '<5ms'} P2P
+                </span>
+              ) : (
+                <span className="px-2 py-0.5 rounded-full bg-amber-950/90 text-amber-300 border border-amber-500/40 text-[9px] font-mono font-black flex items-center gap-1">
+                  <Wifi size={9} className="text-amber-400" /> {pingMs ? `${pingMs}ms` : 'LAN'}
+                </span>
+              )}
               <span className={`px-2.5 py-0.5 rounded-full border text-[10px] font-bold ${roleBadge.color}`}>
                 {roleBadge.label}
-              </span>
-              <span className="px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/40 text-[10px] font-black uppercase tracking-wider flex items-center gap-1">
-                <Radio size={10} className="animate-pulse" /> Live
               </span>
             </div>
           ) : connectionStatus === 'pending' ? (
@@ -524,7 +720,7 @@ function RemoteOperatorApp() {
 
       {/* Viewer Read-Only Warning Notice Banner */}
       {isConnectedAndPaired && !currentPermissions.canControlSlides && (
-        <div className="px-4 py-2 bg-amber-950/60 border-b border-amber-700/50 text-amber-300 text-xs font-semibold flex items-center justify-between">
+        <div className="shrink-0 px-4 py-2 bg-amber-950/60 border-b border-amber-700/50 text-amber-300 text-xs font-semibold flex items-center justify-between">
           <div className="flex items-center gap-1.5">
             <AlertCircle size={14} className="text-amber-400 shrink-0" />
             <span>View-Only Mode: Ask the desktop operator to upgrade your role to control slides.</span>
@@ -534,7 +730,7 @@ function RemoteOperatorApp() {
 
       {/* Control Lock Status Banner */}
       {isConnectedAndPaired && (
-        <div className={`px-4 py-2 text-xs flex items-center justify-between border-b ${
+        <div className={`shrink-0 px-4 py-1.5 text-xs flex items-center justify-between border-b ${
           hasControlLock
             ? "bg-indigo-950/80 border-indigo-800/60 text-indigo-200 font-bold"
             : activeControllerId
@@ -587,22 +783,20 @@ function RemoteOperatorApp() {
             initial={{ opacity: 0, y: -20 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -20 }}
-            className={`fixed top-16 left-1/2 -translate-x-1/2 z-50 px-4 py-2 rounded-full text-white text-xs font-black shadow-2xl border ${
-              feedbackToast.startsWith('❌')
-                ? 'bg-rose-600 border-rose-400/50'
-                : feedbackToast.startsWith('✅')
-                  ? 'bg-emerald-600 border-emerald-400/50'
-                  : 'bg-indigo-600 border-indigo-400/50'
+            className={`fixed top-14 left-1/2 -translate-x-1/2 z-50 px-4 py-2 rounded-2xl text-xs font-bold shadow-2xl backdrop-blur-md border flex items-center gap-2 ${
+              feedbackToast.includes('❌') || feedbackToast.includes('🚫')
+                ? "bg-rose-950/95 text-rose-200 border-rose-500 shadow-rose-950/50" 
+                : "bg-neutral-900/95 text-white border-neutral-700 shadow-black/80"
             }`}
           >
-            {feedbackToast}
+            <span>{feedbackToast}</span>
           </motion.div>
         )}
       </AnimatePresence>
 
-      {/* CONNECTING / PENDING APPROVAL OVERLAY */}
+      {/* CONNECTING / UNPAIRED SCREEN */}
       {!isConnectedAndPaired && (
-        <div className="p-6 flex flex-col items-center justify-center min-h-[60vh] text-center space-y-5">
+        <div className="flex-1 overflow-y-auto p-6 flex flex-col items-center justify-center text-center space-y-5">
           <div className="p-4 rounded-3xl bg-neutral-900 border border-neutral-800 shadow-2xl">
             <Radio size={40} className="text-indigo-400 animate-pulse" />
           </div>
@@ -688,269 +882,259 @@ function RemoteOperatorApp() {
 
       {/* PAIRED OPERATOR MAIN DASHBOARD */}
       {isConnectedAndPaired && (
-        <main className="flex-1 flex flex-col p-4 space-y-4 max-w-lg mx-auto w-full">
+        <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
           
-          {/* Sub Navigation Tabs */}
-          <div className="flex rounded-2xl bg-neutral-900/90 p-1 border border-neutral-800/80">
-            <button
-              type="button"
-              onClick={() => setActiveTab('live')}
-              className={`flex-1 py-2 text-xs font-bold rounded-xl transition-all ${
-                activeTab === 'live'
-                  ? "bg-indigo-600 text-white shadow-md"
-                  : "text-neutral-400 hover:text-white"
-              }`}
-            >
-              Live Monitor
-            </button>
-            <button
-              type="button"
-              onClick={() => setActiveTab('schedule')}
-              className={`flex-1 py-2 text-xs font-bold rounded-xl transition-all ${
-                activeTab === 'schedule'
-                  ? "bg-indigo-600 text-white shadow-md"
-                  : "text-neutral-400 hover:text-white"
-              }`}
-            >
-              Schedule ({liveState?.scheduleItems?.length || 0})
-            </button>
-            <button
-              type="button"
-              onClick={() => setActiveTab('actions')}
-              className={`flex-1 py-2 text-xs font-bold rounded-xl transition-all ${
-                activeTab === 'actions'
-                  ? "bg-indigo-600 text-white shadow-md"
-                  : "text-neutral-400 hover:text-white"
-              }`}
-            >
-              Quick Actions
-            </button>
-          </div>
-
-          {/* TAB 1: LIVE MONITOR & PREVIEW */}
-          {activeTab === 'live' && (
-            <div className="space-y-4 flex-1 flex flex-col">
-              {/* Synchronized Real-Time Live Projector Preview Card */}
-              <div 
-                onTouchStart={handleTouchStart}
-                onTouchEnd={handleTouchEnd}
-                className="relative aspect-video w-full rounded-2xl bg-neutral-900 border border-neutral-800 shadow-2xl overflow-hidden flex flex-col justify-center items-center p-5 text-center transition-all cursor-grab"
+          {/* ================================================================= */}
+          {/* 1. STICKY TOP PINNED SECTION (Controls + Live Stage Monitor)      */}
+          {/* ================================================================= */}
+          <div className="shrink-0 px-3.5 pt-2 pb-2 bg-neutral-950/95 backdrop-blur-xl border-b border-neutral-800/80 shadow-2xl z-20 space-y-2 max-w-lg mx-auto w-full">
+            
+            {/* Quick Stage Controls Strip (Blackout, Timer, Ticker, Screen Cast) */}
+            <div className="grid grid-cols-4 gap-1.5">
+              <button
+                type="button"
+                onClick={handleToggleHideText}
+                disabled={!currentPermissions.canBlackout}
+                className={`py-1.5 px-2 rounded-xl font-black text-[11px] flex items-center justify-center gap-1 transition-all shadow-sm ${
+                  !currentPermissions.canBlackout
+                    ? "bg-neutral-900/60 text-neutral-500 border border-neutral-800 cursor-not-allowed opacity-50"
+                    : liveState?.isTextHidden
+                      ? "bg-amber-500 text-black ring-2 ring-amber-400 font-black animate-pulse"
+                      : "bg-neutral-900 text-white hover:bg-neutral-800 border border-neutral-800"
+                }`}
               >
-                {/* Background Layer Representation */}
-                <div 
-                  className="absolute inset-0 z-0 bg-cover bg-center"
+                <EyeOff size={12} className={liveState?.isTextHidden ? "text-black" : "text-amber-400"} />
+                <span>{liveState?.isTextHidden ? "UNMUTE" : "MUTE"}</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={handleToggleTimer}
+                disabled={!currentPermissions.canControlTimer}
+                className={`py-1.5 px-2 rounded-xl font-bold text-[11px] flex items-center justify-center gap-1 transition-all shadow-sm ${
+                  !currentPermissions.canControlTimer
+                    ? "bg-neutral-900/60 text-neutral-500 border border-neutral-800 cursor-not-allowed opacity-50"
+                    : liveState?.isCountdownRunning
+                      ? "bg-amber-500 text-black ring-2 ring-amber-400"
+                      : "bg-neutral-900 text-neutral-300 hover:bg-neutral-800 border border-neutral-800"
+                }`}
+              >
+                <Clock size={12} className={liveState?.isCountdownRunning ? "text-black" : "text-amber-400"} />
+                <span className="font-mono">{formatTimer(liveState?.countdownLeft || 0)}</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={handleToggleTicker}
+                disabled={!currentPermissions.canControlTicker}
+                className={`py-1.5 px-2 rounded-xl font-bold text-[11px] flex items-center justify-center gap-1 transition-all shadow-sm ${
+                  !currentPermissions.canControlTicker
+                    ? "bg-neutral-900/60 text-neutral-500 border border-neutral-800 cursor-not-allowed opacity-50"
+                    : liveState?.tickerConfig?.enabled
+                      ? "bg-indigo-600 text-white ring-2 ring-indigo-400"
+                      : "bg-neutral-900 text-neutral-300 hover:bg-neutral-800 border border-neutral-800"
+                }`}
+              >
+                <Megaphone size={12} className={liveState?.tickerConfig?.enabled ? "text-white" : "text-indigo-400"} />
+                <span>{liveState?.tickerConfig?.enabled ? "TICKER" : "TICKER"}</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={handleToggleScreenShare}
+                className={`py-1.5 px-2 rounded-xl font-black text-[11px] flex items-center justify-center gap-1 transition-all shadow-sm ${
+                  isScreenSharing
+                    ? "bg-rose-600 text-white ring-2 ring-rose-400 font-black animate-pulse"
+                    : "bg-neutral-900 text-neutral-300 hover:bg-neutral-800 border border-neutral-800 active:scale-95"
+                }`}
+              >
+                <Cast size={12} className={isScreenSharing ? "text-white" : "text-emerald-400"} />
+                <span>{isScreenSharing ? "STOP" : "CAST"}</span>
+              </button>
+            </div>
+
+            {/* Synchronized Real-Time Live Projector Preview Card (Compact & Pinned) */}
+            <div 
+              onTouchStart={handleTouchStart}
+              onTouchEnd={handleTouchEnd}
+              className="relative aspect-[16/8] sm:aspect-video w-full rounded-2xl bg-neutral-900 border border-neutral-800 shadow-2xl overflow-hidden flex flex-col justify-center items-center px-4 py-2.5 text-center transition-all cursor-grab select-none"
+            >
+              {/* Background Layer Representation */}
+              <div 
+                className="absolute inset-0 z-0 bg-cover bg-center"
+                style={{
+                  background: liveState?.globalBgConfig?.mode === 'gradient'
+                    ? `linear-gradient(135deg, ${liveState.globalBgConfig.gradient?.color1 || '#0f172a'}, ${liveState.globalBgConfig.gradient?.color2 || '#1e1b4b'})`
+                    : '#0a0a0c'
+                }}
+              >
+                <div className="absolute inset-0 bg-black/60 backdrop-blur-[1px]"></div>
+              </div>
+
+              {/* Blackout / Text Mute Overlay */}
+              {liveState?.isTextHidden && (
+                <div className="absolute inset-0 z-20 bg-black/90 flex flex-col items-center justify-center text-neutral-400 space-y-1">
+                  <EyeOff size={24} className="text-amber-400 animate-pulse" />
+                  <span className="text-[10px] font-black tracking-wider uppercase text-amber-300">
+                    TEXT MUTED (BLACKOUT ACTIVE)
+                  </span>
+                </div>
+              )}
+
+              {/* Slide Text Content */}
+              <div className="relative z-10 max-h-full overflow-hidden flex flex-col justify-center items-center">
+                <p 
+                  className="text-white font-black leading-snug whitespace-pre-wrap select-none text-xs sm:text-sm drop-shadow-md line-clamp-4"
                   style={{
-                    background: liveState?.globalBgConfig?.mode === 'gradient'
-                      ? `linear-gradient(135deg, ${liveState.globalBgConfig.gradient?.color1 || '#0f172a'}, ${liveState.globalBgConfig.gradient?.color2 || '#1e1b4b'})`
-                      : '#0a0a0c'
+                    fontFamily: getFontFamilyCss(liveState?.displayConfig?.fontFamily),
+                    textShadow: getTextShadowCss(liveState?.displayConfig?.textShadow || 'strong')
                   }}
                 >
-                  <div className="absolute inset-0 bg-black/50 backdrop-blur-[1px]"></div>
-                </div>
-
-                {/* Blackout / Text Mute Overlay */}
-                {liveState?.isTextHidden && (
-                  <div className="absolute inset-0 z-20 bg-black/90 flex flex-col items-center justify-center text-neutral-400 space-y-1">
-                    <EyeOff size={28} className="text-amber-400 animate-pulse" />
-                    <span className="text-[11px] font-black tracking-wider uppercase text-amber-300">
-                      TEXT MUTED (BLACKOUT)
-                    </span>
-                  </div>
+                  {liveState?.activeSlideText || "No active slide text"}
+                </p>
+                {liveState?.activeSlideCitation && (
+                  <span className="text-[11px] font-semibold text-indigo-300 mt-1 truncate max-w-[280px]">
+                    {liveState.activeSlideCitation}
+                  </span>
                 )}
-
-                {/* Slide Text Content */}
-                <div className="relative z-10 max-h-full overflow-hidden flex flex-col justify-center items-center">
-                  <p 
-                    className="text-white font-bold leading-relaxed whitespace-pre-wrap select-none text-base drop-shadow-lg"
-                    style={{
-                      fontFamily: getFontFamilyCss(liveState?.displayConfig?.fontFamily),
-                      textShadow: getTextShadowCss(liveState?.displayConfig?.textShadow || 'strong')
-                    }}
-                  >
-                    {liveState?.activeSlideText || "No active slide text"}
-                  </p>
-                  {liveState?.activeSlideCitation && (
-                    <span className="text-xs font-semibold text-indigo-300 mt-2">
-                      {liveState.activeSlideCitation}
-                    </span>
-                  )}
-                </div>
-
-                {/* Live Countdown Overlay Badge */}
-                {liveState?.isCountdownRunning && (
-                  <div className="absolute top-2.5 right-2.5 z-20 px-2.5 py-1 rounded-lg bg-black/80 border border-amber-500/50 text-amber-400 font-mono font-black text-xs">
-                    ⏱️ {formatTimer(liveState.countdownLeft)}
-                  </div>
-                )}
-
-                {/* Swipe Helper Pill */}
-                <span className="absolute bottom-2 left-1/2 -translate-x-1/2 text-[9px] text-neutral-500 font-medium z-10 pointer-events-none">
-                  Swipe left/right to change slides
-                </span>
               </div>
 
-              {/* Current & Upcoming Slide Details */}
-              <div className="grid grid-cols-2 gap-3">
-                <div className="p-3.5 rounded-2xl bg-neutral-900/90 border border-neutral-800 space-y-1">
-                  <span className="text-[10px] font-black text-indigo-400 uppercase tracking-wider">
-                    CURRENT
-                  </span>
-                  <div className="font-black text-xs text-white truncate">
-                    {liveState?.activeItemTitle || "None"}
-                  </div>
-                  <div className="text-[11px] text-neutral-400 font-medium">
-                    {liveState?.activeSlideSection} • ({liveState?.activeSlideIndex !== undefined ? liveState.activeSlideIndex + 1 : 1}/{liveState?.totalSlidesInItem || 1})
-                  </div>
-                </div>
-
-                <div className="p-3.5 rounded-2xl bg-neutral-900/90 border border-neutral-800 space-y-1">
-                  <span className="text-[10px] font-black text-neutral-400 uppercase tracking-wider">
-                    NEXT UP
-                  </span>
-                  <div className="font-black text-xs text-neutral-300 truncate">
-                    {liveState?.nextItemTitle || "End of Service"}
-                  </div>
-                  <div className="text-[11px] text-neutral-500 font-medium truncate">
-                    {liveState?.nextSlideText || "No more slides"}
-                  </div>
-                </div>
-              </div>
-
-              {/* In-Preview Mode Alert (When operator is previewing ahead) */}
-              {isInPreviewMode && (
-                <div className="p-3.5 rounded-2xl bg-amber-950/40 border border-amber-500/50 flex items-center justify-between gap-3">
-                  <div className="flex flex-col">
-                    <span className="text-xs font-black text-amber-300">
-                      PREVIEW MODE ACTIVE
-                    </span>
-                    <span className="text-[11px] text-amber-400/80">
-                      Inspecting: {currentItemInView?.title} (Slide {previewSlideIndex + 1})
-                    </span>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={handleGoLivePreview}
-                    className="px-4 py-2 rounded-xl bg-emerald-600 text-white font-black text-xs shadow-lg hover:bg-emerald-500 transition-colors shrink-0"
-                  >
-                    ● GO LIVE NOW
-                  </button>
+              {/* Live Countdown Overlay Badge */}
+              {liveState?.isCountdownRunning && (
+                <div className="absolute top-2 right-2 z-20 px-2 py-0.5 rounded-lg bg-black/80 border border-amber-500/50 text-amber-400 font-mono font-black text-[10px]">
+                  ⏱️ {formatTimer(liveState.countdownLeft)}
                 </div>
               )}
             </div>
-          )}
 
-          {/* TAB 2: SERVICE SCHEDULE NAVIGATOR */}
-          {activeTab === 'schedule' && (
-            <div className="space-y-3 flex-1 overflow-y-auto">
-              <h3 className="text-xs font-black text-neutral-400 uppercase tracking-wider px-1">
-                Order of Worship ({liveState?.scheduleItems?.length || 0} Items)
-              </h3>
-              
-              <div className="space-y-2">
-                {liveState?.scheduleItems?.map((item, idx) => {
+            {/* Current & Upcoming Slide Details Strip (Ultra-Compact) */}
+            <div className="grid grid-cols-2 gap-2 text-left">
+              <div className="p-2 rounded-xl bg-neutral-900/90 border border-neutral-800 flex items-center justify-between gap-1.5 overflow-hidden">
+                <div className="min-w-0">
+                  <div className="text-[8px] font-black text-indigo-400 uppercase tracking-wider">
+                    CURRENT LIVE
+                  </div>
+                  <div className="font-black text-xs text-white truncate">
+                    {liveState?.activeItemTitle || "None"}
+                  </div>
+                </div>
+                <span className="px-1.5 py-0.5 rounded bg-indigo-950 text-indigo-300 font-mono text-[9px] font-bold shrink-0 border border-indigo-800/40">
+                  {liveState?.activeSlideIndex !== undefined ? liveState.activeSlideIndex + 1 : 1}/{liveState?.totalSlidesInItem || 1}
+                </span>
+              </div>
+
+              <div className="p-2 rounded-xl bg-neutral-900/90 border border-neutral-800 flex items-center justify-between gap-1.5 overflow-hidden">
+                <div className="min-w-0">
+                  <div className="text-[8px] font-black text-neutral-400 uppercase tracking-wider">
+                    UP NEXT
+                  </div>
+                  <div className="font-black text-xs text-neutral-300 truncate">
+                    {liveState?.nextItemTitle || "End of Service"}
+                  </div>
+                </div>
+                <span className="text-[9px] text-neutral-500 font-medium truncate max-w-[80px]">
+                  {liveState?.nextSlideText ? "Ready" : "End"}
+                </span>
+              </div>
+            </div>
+          </div>
+
+          {/* ================================================================= */}
+          {/* 2. SCROLLABLE SERVICE PLAYLIST (Smooth scroll underneath)          */}
+          {/* ================================================================= */}
+          <main className="flex-1 overflow-y-auto px-3.5 pt-2 pb-36 space-y-2.5 max-w-lg mx-auto w-full overscroll-contain">
+            <div className="flex items-center justify-between px-1 pt-1">
+              <span className="text-[11px] font-black text-neutral-400 uppercase tracking-wider flex items-center gap-1.5">
+                <Layers size={13} className="text-indigo-400" /> Service Playlist ({liveState?.scheduleItems?.length || 0})
+              </span>
+              <span className="text-[10px] text-neutral-500 font-medium">
+                Tap any slide to jump directly
+              </span>
+            </div>
+
+            <div className="space-y-2 pb-6">
+              {liveState?.scheduleItems && liveState.scheduleItems.length > 0 ? (
+                liveState.scheduleItems.map((item, idx) => {
                   const isItemLive = item.id === liveState.activeItemId;
-                  const isItemInspected = item.id === previewItemId && isInPreviewMode;
 
                   return (
                     <div
                       key={item.id}
-                      className={`p-3.5 rounded-2xl border transition-all ${
+                      className={`p-3 rounded-2xl border transition-all ${
                         isItemLive
-                          ? "bg-indigo-950/50 border-indigo-500/60 shadow-lg shadow-indigo-950/50"
-                          : isItemInspected
-                            ? "bg-amber-950/30 border-amber-500/50"
-                            : "bg-neutral-900/80 border-neutral-800"
+                          ? "bg-indigo-950/40 border-indigo-500/60 shadow-lg shadow-indigo-950/40 ring-1 ring-indigo-500/30"
+                          : "bg-neutral-900/80 border-neutral-800 hover:border-neutral-700"
                       }`}
                     >
-                      <div className="flex items-center justify-between mb-2">
-                        <div className="flex items-center gap-2">
-                          <span className={`text-[10px] font-black px-2 py-0.5 rounded-md ${
+                      {/* Item Header (Tap to Jump to Item Slide 1) */}
+                      <div 
+                        onClick={() => {
+                          if (!currentPermissions.canControlSlides) {
+                            showToast("👁️ View-Only Mode: Cannot change slides");
+                            return;
+                          }
+                          triggerHaptic('heavy');
+                          sendCommand('PRESENTATION_GO_LIVE', {
+                            itemId: item.id,
+                            slideIndex: 0
+                          });
+                          showToast(`Jumped to: ${item.title}`);
+                        }}
+                        className="flex items-center justify-between mb-2 cursor-pointer active:opacity-80"
+                      >
+                        <div className="flex items-center gap-2 min-w-0">
+                          <span className={`text-[10px] font-black px-1.5 py-0.5 rounded-md shrink-0 ${
                             isItemLive ? "bg-indigo-500 text-white" : "bg-neutral-800 text-neutral-400"
                           }`}>
                             #{idx + 1}
                           </span>
-                          <span className="font-black text-xs text-white truncate max-w-[180px]">
+                          <span className="font-black text-xs text-white truncate max-w-[200px]">
                             {item.title}
                           </span>
                         </div>
 
-                        {/* Direct Go Live vs Preview button */}
-                        <div className="flex items-center gap-1.5">
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setPreviewItemId(item.id);
-                              setPreviewSlideIndex(0);
-                              setIsInPreviewMode(true);
-                              setActiveTab('live');
-                              showToast(`Previewing: ${item.title}`);
-                            }}
-                            className="px-2.5 py-1 rounded-lg bg-neutral-800 hover:bg-neutral-700 text-neutral-300 font-bold text-[10px] transition-colors"
-                          >
-                            Preview
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              if (!currentPermissions.canControlSlides) {
-                                setPreviewItemId(item.id);
-                                setPreviewSlideIndex(0);
-                                setIsInPreviewMode(true);
-                                setActiveTab('live');
-                                showToast(`Previewing: ${item.title} (View-Only Mode)`);
-                                return;
-                              }
-                              sendCommand('PRESENTATION_GO_LIVE', {
-                                itemId: item.id,
-                                slideIndex: 0
-                              });
-                              setIsInPreviewMode(false);
-                            }}
-                            className={`px-2.5 py-1 rounded-lg font-black text-[10px] transition-colors ${
-                              isItemLive 
-                                ? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/40" 
-                                : !currentPermissions.canControlSlides
-                                  ? "bg-neutral-800 text-neutral-400 hover:bg-neutral-700"
-                                  : "bg-emerald-600 hover:bg-emerald-500 text-white shadow-sm"
-                            }`}
-                          >
-                            {isItemLive ? "● LIVE" : !currentPermissions.canControlSlides ? "Preview" : "Go Live"}
-                          </button>
+                        {/* Status Tag */}
+                        <div className="shrink-0">
+                          {isItemLive ? (
+                            <span className="px-2 py-0.5 rounded-full font-black text-[9px] bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 flex items-center gap-1">
+                              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+                              ON AIR
+                            </span>
+                          ) : (
+                            <span className="text-[10px] text-neutral-500 font-medium">
+                              {item.slides?.length || item.slideCount || 1} slides
+                            </span>
+                          )}
                         </div>
                       </div>
 
-                      {/* Slides Pills inside Item */}
+                      {/* Slides Pills inside Item - Direct 1-Tap Live Navigation */}
                       {item.slides && item.slides.length > 0 && (
-                        <div className="flex items-center gap-1.5 overflow-x-auto pb-1 pt-1 scrollbar-none">
+                        <div className="flex items-center gap-1.5 overflow-x-auto pb-1 pt-0.5 scrollbar-none">
                           {item.slides.map((s, sIdx) => {
                             const isSlideLive = isItemLive && liveState.activeSlideIndex === sIdx;
-                            const isSlideInspected = isItemInspected && previewSlideIndex === sIdx;
 
                             return (
                               <button
                                 key={sIdx}
                                 type="button"
-                                onClick={() => {
+                                onClick={(e) => {
+                                  e.stopPropagation();
                                   if (!currentPermissions.canControlSlides) {
-                                    setPreviewItemId(item.id);
-                                    setPreviewSlideIndex(sIdx);
-                                    setIsInPreviewMode(true);
-                                    setActiveTab('live');
-                                    showToast(`Previewing slide ${sIdx + 1}`);
+                                    showToast("👁️ View-Only Mode: Cannot change slides");
                                     return;
                                   }
+                                  triggerHaptic('heavy');
                                   sendCommand('PRESENTATION_GO_LIVE', {
                                     itemId: item.id,
                                     slideIndex: sIdx
                                   });
-                                  setIsInPreviewMode(false);
+                                  showToast(`Projected: ${item.title} (${s.section || `Slide ${sIdx + 1}`})`);
                                 }}
-                                className={`px-2.5 py-1 rounded-lg text-[10px] font-bold shrink-0 transition-colors ${
+                                className={`px-2.5 py-1.5 rounded-xl text-[10px] font-bold shrink-0 transition-all active:scale-95 ${
                                   isSlideLive
-                                    ? "bg-emerald-500 text-black font-black ring-2 ring-emerald-400"
-                                    : isSlideInspected
-                                      ? "bg-amber-500 text-black"
-                                      : "bg-neutral-800 text-neutral-300 hover:bg-neutral-700"
+                                    ? "bg-emerald-500 text-black font-black ring-2 ring-emerald-400 shadow-md"
+                                    : "bg-neutral-800/90 text-neutral-300 hover:bg-neutral-700 active:bg-indigo-600 active:text-white border border-neutral-700/50"
                                 }`}
                               >
                                 {s.section || `Slide ${sIdx + 1}`}
@@ -961,183 +1145,88 @@ function RemoteOperatorApp() {
                       )}
                     </div>
                   );
-                })}
-              </div>
+                })
+              ) : (
+                <div className="p-6 rounded-2xl bg-neutral-900/50 border border-neutral-800 text-center space-y-1">
+                  <p className="text-xs text-neutral-400 font-bold">No schedule items loaded yet</p>
+                  <p className="text-[10px] text-neutral-500">Add songs or scriptures to the schedule on the desktop</p>
+                </div>
+              )}
             </div>
-          )}
-
-          {/* TAB 3: QUICK ACTIONS & CONTROLS */}
-          {activeTab === 'actions' && (
-            <div className="space-y-4 flex-1">
-              {/* Emergency Blackout / Text Off */}
-              <div className="p-4 rounded-2xl bg-neutral-900 border border-neutral-800 space-y-3">
-                <span className="text-xs font-black text-neutral-400 uppercase tracking-wider">
-                  Emergency Visibility Controls
-                </span>
-                <div className="grid grid-cols-2 gap-3">
-                  <button
-                    type="button"
-                    onClick={handleToggleHideText}
-                    disabled={!currentPermissions.canBlackout}
-                    className={`p-3.5 rounded-xl font-black text-xs flex flex-col items-center justify-center gap-1.5 transition-all shadow-md ${
-                      !currentPermissions.canBlackout
-                        ? "bg-neutral-900/60 text-neutral-500 border border-neutral-800 cursor-not-allowed opacity-50"
-                        : liveState?.isTextHidden
-                          ? "bg-amber-500 text-black ring-2 ring-amber-400"
-                          : "bg-neutral-800 text-white hover:bg-neutral-700 border border-neutral-700"
-                    }`}
-                  >
-                    <EyeOff size={20} />
-                    <span>{liveState?.isTextHidden ? "SHOW TEXT" : "HIDE TEXT (BLACKOUT)"}</span>
-                    {!currentPermissions.canBlackout && <span className="text-[9px] font-normal text-neutral-500">Requires Operator Role</span>}
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={handleToggleTicker}
-                    disabled={!currentPermissions.canControlTicker}
-                    className={`p-3.5 rounded-xl font-black text-xs flex flex-col items-center justify-center gap-1.5 transition-all shadow-md ${
-                      !currentPermissions.canControlTicker
-                        ? "bg-neutral-900/60 text-neutral-500 border border-neutral-800 cursor-not-allowed opacity-50"
-                        : liveState?.tickerConfig?.enabled
-                          ? "bg-indigo-600 text-white ring-2 ring-indigo-400"
-                          : "bg-neutral-800 text-white hover:bg-neutral-700 border border-neutral-700"
-                    }`}
-                  >
-                    <Megaphone size={20} />
-                    <span>{liveState?.tickerConfig?.enabled ? "HIDE TICKER" : "SHOW TICKER"}</span>
-                    {!currentPermissions.canControlTicker && <span className="text-[9px] font-normal text-neutral-500">Requires Operator Role</span>}
-                  </button>
-                </div>
-              </div>
-
-              {/* Stage Countdown Timer Controls */}
-              <div className="p-4 rounded-2xl bg-neutral-900 border border-neutral-800 space-y-3">
-                <div className="flex items-center justify-between">
-                  <span className="text-xs font-black text-neutral-400 uppercase tracking-wider">
-                    Stage Countdown Timer
-                  </span>
-                  <span className="font-mono text-base font-black text-amber-400">
-                    {formatTimer(liveState?.countdownLeft || 0)}
-                  </span>
-                </div>
-
-                <div className="grid grid-cols-4 gap-2">
-                  <button
-                    type="button"
-                    onClick={() => handleAdjustTimer(-60)}
-                    disabled={!currentPermissions.canControlTimer}
-                    className={`py-2.5 rounded-xl font-black text-xs transition-colors ${
-                      !currentPermissions.canControlTimer
-                        ? "bg-neutral-900 text-neutral-600 cursor-not-allowed opacity-50"
-                        : "bg-neutral-800 hover:bg-neutral-700 text-white"
-                    }`}
-                  >
-                    -1m
-                  </button>
-                  <button
-                    type="button"
-                    onClick={handleToggleTimer}
-                    disabled={!currentPermissions.canControlTimer}
-                    className={`py-2.5 rounded-xl font-black text-xs flex items-center justify-center gap-1 transition-colors ${
-                      !currentPermissions.canControlTimer
-                        ? "bg-neutral-900 text-neutral-600 cursor-not-allowed opacity-50"
-                        : liveState?.isCountdownRunning
-                          ? "bg-amber-500 text-black"
-                          : "bg-emerald-600 text-white"
-                    }`}
-                  >
-                    {liveState?.isCountdownRunning ? <Pause size={14} /> : <Play size={14} />}
-                    {liveState?.isCountdownRunning ? "Pause" : "Start"}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => handleAdjustTimer(60)}
-                    disabled={!currentPermissions.canControlTimer}
-                    className={`py-2.5 rounded-xl font-black text-xs transition-colors ${
-                      !currentPermissions.canControlTimer
-                        ? "bg-neutral-900 text-neutral-600 cursor-not-allowed opacity-50"
-                        : "bg-neutral-800 hover:bg-neutral-700 text-white"
-                    }`}
-                  >
-                    +1m
-                  </button>
-                  <button
-                    type="button"
-                    onClick={handleResetTimer}
-                    disabled={!currentPermissions.canControlTimer}
-                    className={`py-2.5 rounded-xl font-bold text-xs flex items-center justify-center transition-colors ${
-                      !currentPermissions.canControlTimer
-                        ? "bg-neutral-900 text-neutral-600 cursor-not-allowed opacity-50"
-                        : "bg-neutral-800 hover:bg-neutral-700 text-neutral-300"
-                    }`}
-                  >
-                    <RotateCcw size={14} />
-                  </button>
-                </div>
-              </div>
-            </div>
-          )}
-        </main>
+          </main>
+        </div>
       )}
 
-      {/* Primary Sticky Large Touch Navigation Controls (Fixed Bottom) */}
+      {/* Primary Sticky Large Touch Navigation Controls (Fixed Bottom with Safe-Area insets) */}
       {isConnectedAndPaired && (
-        <div className="fixed bottom-0 left-0 right-0 z-40 p-3 bg-neutral-950/95 backdrop-blur-xl border-t border-neutral-800/80 shadow-2xl">
-          <div className="max-w-lg mx-auto grid grid-cols-3 gap-3">
-            <button
-              type="button"
-              onClick={handlePrev}
-              disabled={!currentPermissions.canControlSlides}
-              className={`py-4 rounded-2xl font-black text-sm flex items-center justify-center gap-1.5 border shadow-lg transition-transform ${
-                currentPermissions.canControlSlides
-                  ? "bg-neutral-900 hover:bg-neutral-800 active:scale-95 text-white border-neutral-700"
-                  : "bg-neutral-900/50 text-neutral-500 border-neutral-800 cursor-not-allowed opacity-50"
-              }`}
-            >
-              <ChevronLeft size={20} />
-              <span>PREV</span>
-            </button>
+        <div className="fixed bottom-0 left-0 right-0 z-40 px-4 pt-3 pb-[max(env(safe-area-inset-bottom),14px)] bg-neutral-950/95 backdrop-blur-xl border-t border-neutral-800/80 shadow-2xl">
+          <div className="max-w-lg mx-auto space-y-2">
+            <div className="grid grid-cols-3 gap-3">
+              <button
+                type="button"
+                onClick={handlePrev}
+                disabled={!currentPermissions.canControlSlides}
+                className={`py-4 rounded-2xl font-black text-sm flex items-center justify-center gap-1.5 border shadow-lg transition-all touch-manipulation select-none ${
+                  currentPermissions.canControlSlides
+                    ? "bg-neutral-900 hover:bg-neutral-800 active:scale-[0.93] text-white border-neutral-700 active:bg-neutral-700"
+                    : "bg-neutral-900/50 text-neutral-500 border-neutral-800 cursor-not-allowed opacity-50"
+                }`}
+              >
+                <ChevronLeft size={20} />
+                <span>PREV</span>
+              </button>
 
-            <button
-              type="button"
-              disabled={!currentPermissions.canControlSlides}
-              onClick={() => {
-                if (!currentPermissions.canControlSlides) {
-                  showToast("👁️ View-Only Mode");
-                  return;
-                }
-                if (isInPreviewMode) {
-                  handleGoLivePreview();
-                } else {
-                  showToast("Slide is live!");
-                }
-              }}
-              className={`py-4 rounded-2xl font-black text-sm flex items-center justify-center gap-1.5 shadow-xl transition-all ${
-                !currentPermissions.canControlSlides
-                  ? "bg-neutral-800 text-neutral-400 border border-neutral-700 cursor-not-allowed opacity-50"
-                  : isInPreviewMode
-                    ? "bg-amber-500 text-black ring-4 ring-amber-500/30 animate-pulse active:scale-95"
-                    : "bg-emerald-600 hover:bg-emerald-500 text-white shadow-emerald-950/50 active:scale-95"
-              }`}
-            >
-              {currentPermissions.canControlSlides && <span className="w-2.5 h-2.5 rounded-full bg-white animate-ping mr-0.5"></span>}
-              <span>{!currentPermissions.canControlSlides ? "VIEW ONLY" : isInPreviewMode ? "GO LIVE" : "LIVE"}</span>
-            </button>
+              <button
+                type="button"
+                disabled={!currentPermissions.canControlSlides}
+                onClick={() => {
+                  if (!currentPermissions.canControlSlides) {
+                    showToast("👁️ View-Only Mode");
+                    return;
+                  }
+                  if (isInPreviewMode) {
+                    handleGoLivePreview();
+                  } else {
+                    triggerHaptic('tap');
+                    showToast("Slide is live!");
+                  }
+                }}
+                className={`py-4 rounded-2xl font-black text-sm flex items-center justify-center gap-1.5 shadow-xl transition-all touch-manipulation select-none ${
+                  !currentPermissions.canControlSlides
+                    ? "bg-neutral-800 text-neutral-400 border border-neutral-700 cursor-not-allowed opacity-50"
+                    : isInPreviewMode
+                      ? "bg-amber-500 text-black ring-4 ring-amber-500/30 animate-pulse active:scale-[0.93]"
+                      : "bg-emerald-600 hover:bg-emerald-500 text-white shadow-emerald-950/50 active:scale-[0.93]"
+                }`}
+              >
+                {currentPermissions.canControlSlides && <span className="w-2.5 h-2.5 rounded-full bg-white animate-ping mr-0.5"></span>}
+                <span>
+                  {!currentPermissions.canControlSlides 
+                    ? "VIEW ONLY" 
+                    : isInPreviewMode 
+                      ? "GO LIVE" 
+                      : `LIVE (${(liveState?.activeSlideIndex ?? 0) + 1}/${liveState?.totalSlidesInItem || 1})`
+                  }
+                </span>
+              </button>
 
-            <button
-              type="button"
-              onClick={handleNext}
-              disabled={!currentPermissions.canControlSlides}
-              className={`py-4 rounded-2xl font-black text-sm flex items-center justify-center gap-1.5 shadow-lg border transition-transform ${
-                currentPermissions.canControlSlides
-                  ? "bg-indigo-600 hover:bg-indigo-500 active:scale-95 text-white shadow-indigo-950/50 border-indigo-400/40"
-                  : "bg-neutral-900/50 text-neutral-500 border-neutral-800 cursor-not-allowed opacity-50"
-              }`}
-            >
-              <span>NEXT</span>
-              <ChevronRight size={20} />
-            </button>
+              <button
+                type="button"
+                onClick={handleNext}
+                disabled={!currentPermissions.canControlSlides}
+                className={`py-4 rounded-2xl font-black text-sm flex items-center justify-center gap-1.5 shadow-lg border transition-all touch-manipulation select-none ${
+                  currentPermissions.canControlSlides
+                    ? "bg-indigo-600 hover:bg-indigo-500 active:scale-[0.93] text-white shadow-indigo-950/50 border-indigo-400/40 active:bg-indigo-700"
+                    : "bg-neutral-900/50 text-neutral-500 border-neutral-800 cursor-not-allowed opacity-50"
+                }`}
+              >
+                <span>NEXT</span>
+                <ChevronRight size={20} />
+              </button>
+            </div>
+            <div className="hidden sm:flex items-center justify-center gap-2 text-[10px] text-neutral-500 font-medium">
+              <span>⌨️ Bluetooth Clicker / Keyboard: Space / Arrows / B (Blackout)</span>
+            </div>
           </div>
         </div>
       )}

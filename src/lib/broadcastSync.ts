@@ -1,6 +1,6 @@
 "use client";
 
-import type { Peer, DataConnection } from "peerjs";
+import type { Peer, DataConnection, MediaConnection } from "peerjs";
 import type {
   RemoteOperatorSession, RemoteCommandPayload, RemoteCommandAck,
   CanonicalPresentationState, PairingRequestMessage, PairingResponseMessage,
@@ -39,11 +39,14 @@ export function formatRoomPeerId(roomCode: string): string {
  * Manages WebRTC PeerJS host for a specific Room Code.
  * - Broadcasts live presentation updates to projector/broadcast display screens.
  * - Manages authenticated Remote Operators, validates pairing tokens, and executes remote commands.
+ * - Streams live screen share with full system audio from Host or Mobile Operators directly to projectors.
  */
 export class HostBroadcaster {
   private peer: Peer | null = null;
   private connections: Map<string, DataConnection> = new Map();
   private operatorSessions: Map<string, { conn: DataConnection; session: RemoteOperatorSession }> = new Map();
+  private activeScreenCalls: Map<string, MediaConnection> = new Map();
+  private activeScreenStream: MediaStream | null = null;
   private processedRequestIds: Set<string> = new Set();
   private roomCode: string;
   private onClientsChange?: (clients: ConnectedClientInfo[]) => void;
@@ -51,6 +54,8 @@ export class HostBroadcaster {
   private onOperatorPairingRequest?: (req: PairingRequestMessage, conn: DataConnection) => void;
   private onOperatorCommand?: (cmd: RemoteCommandPayload, session: RemoteOperatorSession) => Promise<{ success: boolean; reason?: string }>;
   private onOperatorsChange?: (operators: RemoteOperatorSession[]) => void;
+  private onIncomingScreenShare?: (stream: MediaStream, senderId: string) => void;
+  private onScreenShareEnded?: () => void;
   private onError?: (err: { type: string; message: string }) => void;
   private onReady?: () => void;
   private onStatusChange?: (status: 'ready' | 'error' | 'disconnected') => void;
@@ -72,6 +77,8 @@ export class HostBroadcaster {
       onOperatorPairingRequest?: (req: PairingRequestMessage, conn: DataConnection) => void;
       onOperatorCommand?: (cmd: RemoteCommandPayload, session: RemoteOperatorSession) => Promise<{ success: boolean; reason?: string }>;
       onOperatorsChange?: (operators: RemoteOperatorSession[]) => void;
+      onIncomingScreenShare?: (stream: MediaStream, senderId: string) => void;
+      onScreenShareEnded?: () => void;
       onError?: (err: { type: string; message: string }) => void;
       onReady?: () => void;
       onStatusChange?: (status: 'ready' | 'error' | 'disconnected') => void;
@@ -83,6 +90,8 @@ export class HostBroadcaster {
     this.onOperatorPairingRequest = callbacks?.onOperatorPairingRequest;
     this.onOperatorCommand = callbacks?.onOperatorCommand;
     this.onOperatorsChange = callbacks?.onOperatorsChange;
+    this.onIncomingScreenShare = callbacks?.onIncomingScreenShare;
+    this.onScreenShareEnded = callbacks?.onScreenShareEnded;
     this.onError = callbacks?.onError;
     this.onReady = callbacks?.onReady;
     this.onStatusChange = callbacks?.onStatusChange;
@@ -130,6 +139,38 @@ export class HostBroadcaster {
 
       this.peer.on("connection", (conn) => {
         this.handleNewConnection(conn);
+      });
+
+      this.peer.on("call", (mediaCall: MediaConnection) => {
+        mediaCall.answer(); // Answer incoming screen share call from mobile remote
+        mediaCall.on("stream", (remoteStream: MediaStream) => {
+          this.activeScreenStream = remoteStream;
+          this.onIncomingScreenShare?.(remoteStream, mediaCall.peer);
+          // Forward stream to all other connected clients (like projectors)
+          this.connections.forEach((conn, peerId) => {
+            if (peerId !== mediaCall.peer && this.peer) {
+              try {
+                const forwardCall = this.peer.call(peerId, remoteStream);
+                if (forwardCall) this.activeScreenCalls.set(peerId, forwardCall);
+              } catch {}
+            }
+          });
+          this.broadcast({
+            type: "SCREEN_SHARE_START",
+            hasAudio: remoteStream.getAudioTracks().length > 0,
+            senderPeerId: mediaCall.peer
+          });
+        });
+
+        mediaCall.on("close", () => {
+          this.activeScreenStream = null;
+          this.activeScreenCalls.forEach(call => {
+            try { call.close(); } catch {}
+          });
+          this.activeScreenCalls.clear();
+          this.onScreenShareEnded?.();
+          this.broadcast({ type: "SCREEN_SHARE_STOP" });
+        });
       });
 
       this.peer.on("error", (err: any) => {
@@ -416,6 +457,32 @@ export class HostBroadcaster {
     }
   }
 
+  public broadcastScreenShare(stream: MediaStream) {
+    this.activeScreenStream = stream;
+    this.connections.forEach((conn, peerId) => {
+      if (this.peer) {
+        try {
+          const call = this.peer.call(peerId, stream);
+          if (call) this.activeScreenCalls.set(peerId, call);
+        } catch {}
+      }
+    });
+    this.broadcast({
+      type: "SCREEN_SHARE_START",
+      hasAudio: stream.getAudioTracks().length > 0,
+      senderPeerId: "host"
+    });
+  }
+
+  public stopScreenShare() {
+    this.activeScreenStream = null;
+    this.activeScreenCalls.forEach(call => {
+      try { call.close(); } catch {}
+    });
+    this.activeScreenCalls.clear();
+    this.broadcast({ type: "SCREEN_SHARE_STOP" });
+  }
+
   public getConnectedCount(): number {
     return this.connections.size;
   }
@@ -453,9 +520,12 @@ export class HostBroadcaster {
 export class ClientReceiver {
   private peer: Peer | null = null;
   private conn: DataConnection | null = null;
+  private activeScreenCall: MediaConnection | null = null;
   private roomCode: string;
   private onMessage: (msg: BroadcastMessage) => void;
   private onStatusChange: (status: 'connecting' | 'connected' | 'disconnected') => void;
+  private onScreenShareStream?: (stream: MediaStream) => void;
+  private onScreenShareEnded?: () => void;
   private isDestroyed = false;
   private reconnectTimer: any = null;
   private connectAttempts = 0;
@@ -466,11 +536,15 @@ export class ClientReceiver {
     callbacks: {
       onMessage: (msg: BroadcastMessage) => void;
       onStatusChange: (status: 'connecting' | 'connected' | 'disconnected') => void;
+      onScreenShareStream?: (stream: MediaStream) => void;
+      onScreenShareEnded?: () => void;
     }
   ) {
     this.roomCode = roomCode;
     this.onMessage = callbacks.onMessage;
     this.onStatusChange = callbacks.onStatusChange;
+    this.onScreenShareStream = callbacks.onScreenShareStream;
+    this.onScreenShareEnded = callbacks.onScreenShareEnded;
     this.init();
 
     if (typeof window !== "undefined") {
@@ -511,6 +585,18 @@ export class ClientReceiver {
         if (!this.isDestroyed) {
           this.connectToHost();
         }
+      });
+
+      this.peer.on("call", (mediaCall: MediaConnection) => {
+        mediaCall.answer(); // Answer incoming screen share call from host
+        this.activeScreenCall = mediaCall;
+        mediaCall.on("stream", (stream: MediaStream) => {
+          this.onScreenShareStream?.(stream);
+        });
+        mediaCall.on("close", () => {
+          this.activeScreenCall = null;
+          this.onScreenShareEnded?.();
+        });
       });
 
       this.peer.on("error", () => {
@@ -563,6 +649,9 @@ export class ClientReceiver {
 
       conn.on("data", (data: any) => {
         if (typeof data === "object" && data !== null) {
+          if (data.type === "SCREEN_SHARE_STOP") {
+            this.onScreenShareEnded?.();
+          }
           this.onMessage(data as BroadcastMessage);
         }
       });
@@ -639,6 +728,8 @@ export class ClientReceiver {
 export class RemoteOperatorClient {
   private peer: Peer | null = null;
   private conn: DataConnection | null = null;
+  private activeScreenCall: MediaConnection | null = null;
+  private localScreenStream: MediaStream | null = null;
   private roomCode: string;
   private operatorId: string;
   private operatorName: string;
@@ -912,6 +1003,83 @@ export class RemoteOperatorClient {
     } else {
       this.init();
     }
+  }
+
+  public send(payload: any) {
+    if (this.conn && this.conn.open) {
+      try {
+        this.conn.send(payload);
+      } catch {}
+    }
+  }
+
+  public get isScreenSharing(): boolean {
+    return !!this.localScreenStream && this.localScreenStream.active;
+  }
+
+  public async startScreenShare(): Promise<{ success: boolean; stream?: MediaStream; error?: string }> {
+    if (typeof navigator === "undefined" || !navigator.mediaDevices?.getDisplayMedia) {
+      return { 
+        success: false, 
+        error: "Screen sharing is not supported by your browser or requires HTTPS / localhost." 
+      };
+    }
+    try {
+      const stream = await navigator.mediaDevices.getDisplayMedia({
+        video: {
+          displaySurface: "monitor",
+          frameRate: { ideal: 30, max: 60 }
+        },
+        audio: {
+          echoCancellation: false,
+          noiseSuppression: false,
+          autoGainControl: false
+        }
+      });
+
+      this.localScreenStream = stream;
+
+      const hostPeerId = formatRoomPeerId(this.roomCode);
+      if (this.peer) {
+        try {
+          const call = this.peer.call(hostPeerId, stream);
+          this.activeScreenCall = call || null;
+        } catch {}
+      }
+
+      if (stream.getVideoTracks().length > 0) {
+        stream.getVideoTracks()[0].onended = () => {
+          this.stopScreenShare();
+        };
+      }
+
+      this.send({
+        type: "OPERATOR_SCREEN_SHARE_START",
+        operatorId: this.operatorId,
+        hasAudio: stream.getAudioTracks().length > 0
+      });
+
+      return { success: true, stream };
+    } catch (e: any) {
+      return { success: false, error: e?.message || "Screen sharing was cancelled or failed." };
+    }
+  }
+
+  public stopScreenShare() {
+    if (this.localScreenStream) {
+      this.localScreenStream.getTracks().forEach(t => {
+        try { t.stop(); } catch {}
+      });
+      this.localScreenStream = null;
+    }
+    if (this.activeScreenCall) {
+      try { this.activeScreenCall.close(); } catch {}
+      this.activeScreenCall = null;
+    }
+    this.send({
+      type: "OPERATOR_SCREEN_SHARE_STOP",
+      operatorId: this.operatorId
+    });
   }
 
   public destroy() {

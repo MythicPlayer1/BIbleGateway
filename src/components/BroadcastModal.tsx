@@ -31,6 +31,10 @@ export const BroadcastModal: React.FC<BroadcastModalProps> = ({
   const [copied, setCopied] = useState(false);
   const [qrDataUrl, setQrDataUrl] = useState<string>("");
   const [originUrl, setOriginUrl] = useState<string>("");
+  const [lanIp, setLanIp] = useState<string>("");
+  const [allIps, setAllIps] = useState<Array<{ name: string; ip: string }>>([]);
+  const [hostMode, setHostMode] = useState<'lan' | 'localhost' | 'custom'>('lan');
+  const [customHost, setCustomHost] = useState<string>("");
 
   useEffect(() => {
     setLocalRoomInput(roomCode);
@@ -39,14 +43,46 @@ export const BroadcastModal: React.FC<BroadcastModalProps> = ({
   useEffect(() => {
     if (typeof window !== "undefined") {
       setOriginUrl(window.location.origin);
+      fetch("/api/network-ip")
+        .then(res => res.json())
+        .then(data => {
+          if (data?.ip && data.ip !== "localhost") {
+            setLanIp(data.ip);
+          }
+          if (data?.interfaces) {
+            setAllIps(data.interfaces);
+          }
+        })
+        .catch(() => {});
     }
   }, []);
 
-  const fullShareUrl = originUrl 
-    ? `${originUrl}/projector?room=${encodeURIComponent(localRoomInput.trim() || roomCode)}` 
+  const getEffectiveOrigin = () => {
+    if (typeof window === "undefined") return "";
+    const port = window.location.port ? `:${window.location.port}` : "";
+    const protocol = window.location.protocol;
+
+    if (hostMode === 'lan' && lanIp) {
+      return `${protocol}//${lanIp}${port}`;
+    }
+    if (hostMode === 'custom' && customHost.trim()) {
+      const cleanCustom = customHost.trim().replace(/^https?:\/\//, "");
+      return `${protocol}//${cleanCustom}`;
+    }
+    return originUrl || `${protocol}//localhost${port}`;
+  };
+
+  const effectiveOrigin = getEffectiveOrigin();
+
+  const fullShareUrl = effectiveOrigin 
+    ? `${effectiveOrigin}/projector?room=${encodeURIComponent(localRoomInput.trim() || roomCode)}` 
     : `/projector?room=${encodeURIComponent(localRoomInput.trim() || roomCode)}`;
 
-  // Generate HD QR Code on Room change
+  const remoteControlUrl = effectiveOrigin
+    ? `${effectiveOrigin}/remote?room=${encodeURIComponent(localRoomInput.trim() || roomCode)}`
+    : `/remote?room=${encodeURIComponent(localRoomInput.trim() || roomCode)}`;
+
+  // Generate HD QR Code on Room or IP change
   useEffect(() => {
     if (!isOpen || !fullShareUrl) return;
 
@@ -179,7 +215,78 @@ export const BroadcastModal: React.FC<BroadcastModalProps> = ({
             </p>
           </form>
 
-          {/* 3. Sharable Link & QR Code */}
+          {/* 3. Address Mode Selector (LAN Wi-Fi IP vs Localhost vs Custom) */}
+          <div className="space-y-2 p-3.5 bg-neutral-950/80 rounded-2xl border border-neutral-800">
+            <div className="flex items-center justify-between text-xs">
+              <span className="font-bold text-neutral-300 flex items-center gap-1.5">
+                <Wifi size={14} className="text-emerald-400" />
+                <span>Host URL / IP Address:</span>
+              </span>
+              <span className="text-[10px] text-neutral-500 font-medium">
+                {hostMode === 'lan' ? 'Recommended for Smart TVs & Phones' : hostMode === 'localhost' ? 'Same Computer Only' : 'Custom Network IP'}
+              </span>
+            </div>
+
+            <div className="grid grid-cols-3 gap-2">
+              <button
+                type="button"
+                onClick={() => setHostMode('lan')}
+                className={`py-2 px-2.5 rounded-xl text-xs font-bold transition-all flex flex-col items-center justify-center gap-0.5 border ${
+                  hostMode === 'lan'
+                    ? "bg-indigo-600 text-white border-indigo-400 shadow-md shadow-indigo-600/30 ring-1 ring-indigo-400/50"
+                    : "bg-neutral-900 text-neutral-400 border-neutral-800 hover:text-neutral-200"
+                }`}
+              >
+                <span className="flex items-center gap-1">
+                  <Wifi size={12} className={hostMode === 'lan' ? "text-white" : "text-emerald-400"} />
+                  <span>Wi-Fi / LAN IP</span>
+                </span>
+                <span className="text-[10px] font-mono opacity-80 truncate max-w-[120px]">
+                  {lanIp || "Detecting..."}
+                </span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setHostMode('localhost')}
+                className={`py-2 px-2.5 rounded-xl text-xs font-bold transition-all flex flex-col items-center justify-center gap-0.5 border ${
+                  hostMode === 'localhost'
+                    ? "bg-indigo-600 text-white border-indigo-400 shadow-md shadow-indigo-600/30 ring-1 ring-indigo-400/50"
+                    : "bg-neutral-900 text-neutral-400 border-neutral-800 hover:text-neutral-200"
+                }`}
+              >
+                <span>Localhost</span>
+                <span className="text-[10px] font-mono opacity-80">localhost:3000</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setHostMode('custom')}
+                className={`py-2 px-2.5 rounded-xl text-xs font-bold transition-all flex flex-col items-center justify-center gap-0.5 border ${
+                  hostMode === 'custom'
+                    ? "bg-indigo-600 text-white border-indigo-400 shadow-md shadow-indigo-600/30 ring-1 ring-indigo-400/50"
+                    : "bg-neutral-900 text-neutral-400 border-neutral-800 hover:text-neutral-200"
+                }`}
+              >
+                <span>Custom IP</span>
+                <span className="text-[10px] font-mono opacity-80">e.g. 172.20.10.2</span>
+              </button>
+            </div>
+
+            {hostMode === 'custom' && (
+              <div className="pt-1">
+                <input
+                  type="text"
+                  value={customHost}
+                  onChange={(e) => setCustomHost(e.target.value)}
+                  placeholder="Enter IP:port (e.g. 172.20.10.2:3000 or mydomain.com)"
+                  className="w-full bg-neutral-900 border border-neutral-700 rounded-xl px-3 py-2 text-xs font-mono text-white placeholder-neutral-500 outline-none focus:ring-2 focus:ring-indigo-500"
+                />
+              </div>
+            )}
+          </div>
+
+          {/* 4. Sharable Link & QR Code */}
           <div className="grid grid-cols-1 sm:grid-cols-12 gap-4 items-center bg-neutral-900/60 p-4 rounded-2xl border border-neutral-800">
             {/* Left Column: Direct Link */}
             <div className="sm:col-span-7 space-y-3">

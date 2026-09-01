@@ -3,7 +3,7 @@
 import React from "react";
 import { 
   BookOpen, Calendar, Music, Megaphone, 
-  EyeOff, Radio, MonitorPlay, Sparkles 
+  EyeOff, Radio, MonitorPlay, Sparkles, Cast 
 } from "lucide-react";
 import type { TickerConfig, ProjectorDisplayConfig } from "@/lib/lyrics";
 import { Sliders } from "lucide-react";
@@ -21,6 +21,8 @@ interface HeaderProps {
   onToggleHideText: () => void;
   isDisplayConnected: boolean;
   onOpenProjector: () => void;
+  isHostScreenSharing?: boolean;
+  onToggleScreenShare?: () => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -35,7 +37,9 @@ export const Header: React.FC<HeaderProps> = ({
   isTextHidden,
   onToggleHideText,
   isDisplayConnected,
-  onOpenProjector
+  onOpenProjector,
+  isHostScreenSharing,
+  onToggleScreenShare
 }) => {
   return (
     <header className="bg-[#0c0c0c] border-b border-neutral-800/80 sticky top-0 z-30 shadow-md">
@@ -121,6 +125,22 @@ export const Header: React.FC<HeaderProps> = ({
             >
               <Sparkles size={14} className="text-indigo-400" />
               <span>BG STUDIO</span>
+            </button>
+          )}
+
+          {/* Screen Share with Audio Cast Button */}
+          {onToggleScreenShare && (
+            <button
+              onClick={onToggleScreenShare}
+              className={`flex items-center gap-2 px-3.5 py-2.5 rounded-full font-bold text-xs uppercase tracking-wider transition-all border shadow-sm active:scale-95 ${
+                isHostScreenSharing
+                  ? 'bg-rose-950/90 text-rose-300 border-rose-500 ring-2 ring-rose-500/30 animate-pulse'
+                  : 'bg-neutral-900 hover:bg-neutral-800 text-neutral-300 border-neutral-700'
+              }`}
+              title="Cast Entire Screen or Window with System Audio directly to Projectors"
+            >
+              <Cast size={14} className={isHostScreenSharing ? "text-rose-400" : "text-emerald-400"} />
+              <span>{isHostScreenSharing ? 'CASTING SCREEN (AUDIO ON)' : 'SHARE SCREEN'}</span>
             </button>
           )}
 

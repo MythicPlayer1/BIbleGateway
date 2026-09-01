@@ -80,6 +80,17 @@ export default function Projector() {
   // Display & Typography Customization State (SSR-safe initial defaults, hydrated via useEffect)
   const [displayConfig, setDisplayConfig] = useState<ProjectorDisplayConfig>(DEFAULT_DISPLAY_CONFIG);
 
+  // Screen Share Stream & Video Player (Host / Mobile Remote Screen Cast with Audio)
+  const [screenShareStream, setScreenShareStream] = useState<MediaStream | null>(null);
+  const screenShareVideoRef = useRef<HTMLVideoElement | null>(null);
+
+  useEffect(() => {
+    if (screenShareVideoRef.current && screenShareStream) {
+      screenShareVideoRef.current.srcObject = screenShareStream;
+      screenShareVideoRef.current.play().catch(() => {});
+    }
+  }, [screenShareStream]);
+
   const [autoFitScale, setAutoFitScale] = useState<number>(1);
   const contentContainerRef = useRef<HTMLDivElement | null>(null);
   const textElementRef = useRef<HTMLDivElement | null>(null);
@@ -325,7 +336,7 @@ export default function Projector() {
         setTicker(data.config);
       }
     }
-    else if (data.type === 'SET_DISPLAY_CONFIG') {
+    else if (data.type === 'SET_DISPLAY_CONFIG' || data.type === 'DISPLAY_CONFIG_SYNC') {
       if (data.config) {
         setDisplayConfig(data.config);
       }
@@ -409,7 +420,13 @@ export default function Projector() {
 
     const receiver = new ClientReceiver(roomCode, {
       onMessage: (msg) => processProjectorMessage(msg),
-      onStatusChange: (status) => setOnlineSyncStatus(status)
+      onStatusChange: (status) => setOnlineSyncStatus(status),
+      onScreenShareStream: (stream) => {
+        setScreenShareStream(stream);
+      },
+      onScreenShareEnded: () => {
+        setScreenShareStream(null);
+      }
     });
 
     return () => {
@@ -727,6 +744,23 @@ export default function Projector() {
                   ? `Connecting to room: ${roomCode}...`
                   : `Disconnected (Reconnecting...)`}
             </span>
+          </div>
+        </div>
+      )}
+
+      {/* 0. Live Screen Share Stream Layer (Video + Audio) */}
+      {screenShareStream && (
+        <div className="absolute inset-0 z-30 bg-black flex items-center justify-center overflow-hidden">
+          <video
+            ref={screenShareVideoRef}
+            autoPlay
+            playsInline
+            className="w-full h-full object-contain"
+          />
+          <div className="absolute top-4 left-4 z-50 px-3.5 py-1.5 rounded-full bg-indigo-950/90 border border-indigo-500/50 text-indigo-200 text-xs font-black flex items-center gap-2 shadow-2xl backdrop-blur-md">
+            <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+            <span>LIVE SCREEN CAST</span>
+            <span className="text-[10px] text-emerald-300 font-mono font-bold">AUDIO ON 🔊</span>
           </div>
         </div>
       )}

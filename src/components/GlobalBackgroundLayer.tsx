@@ -80,7 +80,7 @@ export function GlobalBackgroundLayer({ config, legacyBgUrl, legacyBgType }: Glo
 
   return (
     <div className="absolute inset-0 z-0 overflow-hidden select-none">
-      
+
       {/* 1. SLIDESHOW / SINGLE IMAGE BACKGROUND MODE (WITH CINEMATIC KEN BURNS MOTION) */}
       {mode === 'slideshow' && activeImage?.url && (
         <AnimatePresence mode="popLayout">
@@ -88,32 +88,32 @@ export function GlobalBackgroundLayer({ config, legacyBgUrl, legacyBgType }: Glo
             key={activeImage.id || activeImage.url}
             initial={images.length > 1 ? variants.initial : { opacity: 0, scale: 1 }}
             animate={
-              images.length > 1 
-                ? variants.animate 
-                : { 
-                    opacity: 1, 
-                    scale: [1, 1.06, 1], 
-                    x: [0, -8, 0], 
-                    y: [0, 5, 0] 
-                  }
+              images.length > 1
+                ? variants.animate
+                : {
+                  opacity: 1,
+                  scale: [1, 1.06, 1],
+                  x: [0, -8, 0],
+                  y: [0, 5, 0]
+                }
             }
             exit={variants.exit}
             transition={
-              images.length > 1 
+              images.length > 1
                 ? {
-                    opacity: { duration: durationSec, ease: "easeInOut" },
-                    scale: effect === 'zoom' 
-                      ? { duration: Math.max(intervalSec, durationSec), ease: "linear" } 
-                      : { duration: durationSec, ease: "easeOut" },
-                    x: { duration: durationSec, ease: [0.25, 1, 0.5, 1] },
-                    filter: { duration: durationSec, ease: "easeOut" }
-                  }
+                  opacity: { duration: durationSec, ease: "easeInOut" },
+                  scale: effect === 'zoom'
+                    ? { duration: Math.max(intervalSec, durationSec), ease: "linear" }
+                    : { duration: durationSec, ease: "easeOut" },
+                  x: { duration: durationSec, ease: [0.25, 1, 0.5, 1] },
+                  filter: { duration: durationSec, ease: "easeOut" }
+                }
                 : {
-                    opacity: { duration: 0.6, ease: "easeOut" },
-                    scale: { duration: 30, repeat: Infinity, ease: "easeInOut" },
-                    x: { duration: 30, repeat: Infinity, ease: "easeInOut" },
-                    y: { duration: 30, repeat: Infinity, ease: "easeInOut" }
-                  }
+                  opacity: { duration: 0.6, ease: "easeOut" },
+                  scale: { duration: 30, repeat: Infinity, ease: "easeInOut" },
+                  x: { duration: 30, repeat: Infinity, ease: "easeInOut" },
+                  y: { duration: 30, repeat: Infinity, ease: "easeInOut" }
+                }
             }
             className="absolute inset-0 w-full h-full"
           >
@@ -130,11 +130,9 @@ export function GlobalBackgroundLayer({ config, legacyBgUrl, legacyBgType }: Glo
       {mode === 'gradient' && config?.gradient && (
         <div className="absolute inset-0 w-full h-full overflow-hidden">
           <div
-            className={`w-full h-full transition-all duration-700 ${
-              config.gradient.animation === 'slow-flow' ? 'animate-[spin_40s_linear_infinite]' : ''
-            } ${
-              config.gradient.animation === 'pulse' ? 'animate-pulse' : ''
-            }`}
+            className={`w-full h-full transition-all duration-700 ${config.gradient.animation === 'slow-flow' ? 'animate-[spin_40s_linear_infinite]' : ''
+              } ${config.gradient.animation === 'pulse' ? 'animate-pulse' : ''
+              }`}
             style={{
               background: config.gradient.type === 'radial'
                 ? `radial-gradient(circle at center, ${config.gradient.color1}, ${config.gradient.color2}, ${config.gradient.color3})`
@@ -165,7 +163,7 @@ export function GlobalBackgroundLayer({ config, legacyBgUrl, legacyBgType }: Glo
       )}
 
       {/* Dark transparency overlay for text contrast readability */}
-      <div 
+      <div
         className="absolute inset-0 w-full h-full bg-black transition-opacity duration-300 pointer-events-none"
         style={{ opacity }}
       />

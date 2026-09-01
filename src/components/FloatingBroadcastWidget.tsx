@@ -3,8 +3,7 @@
 import React, { useState, useRef, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { 
-  Radio, Cast, Globe, Monitor, Video, Wifi, 
-  Sparkles, X, Plus, ExternalLink, QrCode, Smartphone
+  Radio, Cast, Sparkles, Smartphone, X
 } from "lucide-react";
 import type { BroadcastTabOption } from "@/components/BroadcastWonderPickerModal";
 
@@ -60,15 +59,6 @@ export const FloatingBroadcastWidget: React.FC<FloatingBroadcastWidgetProps> = (
     setIsOpen(prev => !prev);
   };
 
-  const handleOptionClick = (tab: BroadcastTabOption, directAction?: () => void) => {
-    setIsOpen(false);
-    if (directAction) {
-      directAction();
-    } else {
-      onOpenWonderPicker(tab);
-    }
-  };
-
   const options = [
     {
       id: 'remote_operator',
@@ -86,51 +76,9 @@ export const FloatingBroadcastWidget: React.FC<FloatingBroadcastWidgetProps> = (
       }
     },
     {
-      id: 'internet_room' as BroadcastTabOption,
-      label: 'Internet Live Room',
-      subtitle: isBroadcasting ? `${connectedClientsCount} Connected` : 'WebRTC P2P',
-      icon: Globe,
-      color: 'bg-indigo-600 text-white',
-      pillBg: 'bg-gradient-to-r from-violet-400 to-purple-300 text-purple-950 font-black shadow-lg shadow-purple-900/30',
-      action: () => onOpenWonderPicker('internet_room')
-    },
-    {
-      id: 'local_display' as BroadcastTabOption,
-      label: 'Launch Projector',
-      subtitle: isDisplayConnected ? 'Display Active' : 'Dual HDMI Screen',
-      icon: Monitor,
-      color: 'bg-blue-600 text-white',
-      pillBg: 'bg-gradient-to-r from-indigo-400 to-violet-300 text-indigo-950 font-black shadow-lg shadow-indigo-900/30',
-      action: () => {
-        if (onOpenProjector) {
-          onOpenProjector();
-        } else {
-          onOpenWonderPicker('local_display');
-        }
-      }
-    },
-    {
-      id: 'obs_stream' as BroadcastTabOption,
-      label: 'OBS & vMix Stream',
-      subtitle: '1080p Browser Source',
-      icon: Video,
-      color: 'bg-purple-600 text-white',
-      pillBg: 'bg-gradient-to-r from-fuchsia-400 to-purple-300 text-purple-950 font-black shadow-lg shadow-fuchsia-900/30',
-      action: () => onOpenWonderPicker('obs_stream')
-    },
-    {
-      id: 'lan_wifi' as BroadcastTabOption,
-      label: 'Church Wi-Fi LAN',
-      subtitle: 'Local Network TVs',
-      icon: Wifi,
-      color: 'bg-emerald-600 text-white',
-      pillBg: 'bg-gradient-to-r from-emerald-400 to-teal-300 text-teal-950 font-black shadow-lg shadow-emerald-900/30',
-      action: () => onOpenWonderPicker('lan_wifi')
-    },
-    {
       id: 'all_options' as BroadcastTabOption,
       label: 'Broadcast Studio',
-      subtitle: 'All Output Options',
+      subtitle: isBroadcasting ? `${connectedClientsCount} Connected` : 'Output Options & Projector',
       icon: Sparkles,
       color: 'bg-amber-600 text-white',
       pillBg: 'bg-gradient-to-r from-amber-300 to-yellow-200 text-amber-950 font-black shadow-lg shadow-amber-900/30',

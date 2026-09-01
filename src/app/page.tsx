@@ -46,6 +46,8 @@ export default function Home() {
         onToggleHideText={state.toggleHideText}
         isDisplayConnected={state.isDisplayConnected}
         onOpenProjector={state.handleOpenProjector}
+        isHostScreenSharing={state.isHostScreenSharing}
+        onToggleScreenShare={state.toggleHostScreenShare}
       />
 
       {/* Main Workspace Layout */}

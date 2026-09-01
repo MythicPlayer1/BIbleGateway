@@ -43,6 +43,10 @@ export const BroadcastWonderPickerModal: React.FC<BroadcastWonderPickerModalProp
   const [copiedUrl, setCopiedUrl] = useState<string | null>(null);
   const [qrDataUrl, setQrDataUrl] = useState<string>("");
   const [originUrl, setOriginUrl] = useState<string>("");
+  const [lanIp, setLanIp] = useState<string>("");
+  const [allIps, setAllIps] = useState<Array<{ name: string; ip: string }>>([]);
+  const [hostMode, setHostMode] = useState<'lan' | 'localhost' | 'custom'>('lan');
+  const [customHost, setCustomHost] = useState<string>("");
 
   useEffect(() => {
     if (isOpen && initialTab) {
@@ -57,16 +61,48 @@ export const BroadcastWonderPickerModal: React.FC<BroadcastWonderPickerModalProp
   useEffect(() => {
     if (typeof window !== "undefined") {
       setOriginUrl(window.location.origin);
+      fetch("/api/network-ip")
+        .then(res => res.json())
+        .then(data => {
+          if (data?.ip && data.ip !== "localhost") {
+            setLanIp(data.ip);
+          }
+          if (data?.interfaces) {
+            setAllIps(data.interfaces);
+          }
+        })
+        .catch(() => {});
     }
   }, []);
 
-  const fullShareUrl = originUrl 
-    ? `${originUrl}/projector?room=${encodeURIComponent(localRoomInput.trim() || roomCode)}` 
+  const getEffectiveOrigin = () => {
+    if (typeof window === "undefined") return "";
+    const port = window.location.port ? `:${window.location.port}` : "";
+    const protocol = window.location.protocol;
+
+    if (hostMode === 'lan' && lanIp) {
+      return `${protocol}//${lanIp}${port}`;
+    }
+    if (hostMode === 'custom' && customHost.trim()) {
+      const cleanCustom = customHost.trim().replace(/^https?:\/\//, "");
+      return `${protocol}//${cleanCustom}`;
+    }
+    return originUrl || `${protocol}//localhost${port}`;
+  };
+
+  const effectiveOrigin = getEffectiveOrigin();
+
+  const fullShareUrl = effectiveOrigin 
+    ? `${effectiveOrigin}/projector?room=${encodeURIComponent(localRoomInput.trim() || roomCode)}` 
     : `/projector?room=${encodeURIComponent(localRoomInput.trim() || roomCode)}`;
 
-  const localProjectorUrl = originUrl ? `${originUrl}/projector` : `/projector`;
+  const localProjectorUrl = effectiveOrigin ? `${effectiveOrigin}/projector` : `/projector`;
 
-  // Generate HD QR Code on Room change
+  const remotePhoneUrl = effectiveOrigin
+    ? `${effectiveOrigin}/remote?room=${encodeURIComponent(localRoomInput.trim() || roomCode)}`
+    : `/remote?room=${encodeURIComponent(localRoomInput.trim() || roomCode)}`;
+
+  // Generate HD QR Code on Room or IP change
   useEffect(() => {
     if (!isOpen || !fullShareUrl) return;
 
@@ -300,6 +336,77 @@ export const BroadcastWonderPickerModal: React.FC<BroadcastWonderPickerModalProp
                 </div>
               </form>
 
+              {/* Address Mode Selector (LAN Wi-Fi IP vs Localhost vs Custom) */}
+              <div className="space-y-2 p-3.5 bg-neutral-950/80 rounded-2xl border border-neutral-800">
+                <div className="flex items-center justify-between text-xs">
+                  <span className="font-bold text-neutral-300 flex items-center gap-1.5">
+                    <Wifi size={14} className="text-emerald-400" />
+                    <span>Broadcast Host Address / IP:</span>
+                  </span>
+                  <span className="text-[10px] text-neutral-500 font-medium">
+                    {hostMode === 'lan' ? 'Recommended for TVs, Phones & iPads' : hostMode === 'localhost' ? 'This Machine Only' : 'Custom IP'}
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-3 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setHostMode('lan')}
+                    className={`py-2 px-2.5 rounded-xl text-xs font-bold transition-all flex flex-col items-center justify-center gap-0.5 border ${
+                      hostMode === 'lan'
+                        ? "bg-indigo-600 text-white border-indigo-400 shadow-md shadow-indigo-600/30 ring-1 ring-indigo-400/50"
+                        : "bg-neutral-900 text-neutral-400 border-neutral-800 hover:text-neutral-200"
+                    }`}
+                  >
+                    <span className="flex items-center gap-1">
+                      <Wifi size={12} className={hostMode === 'lan' ? "text-white" : "text-emerald-400"} />
+                      <span>Wi-Fi / LAN IP</span>
+                    </span>
+                    <span className="text-[10px] font-mono opacity-80 truncate max-w-[140px]">
+                      {lanIp || "Detecting..."}
+                    </span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setHostMode('localhost')}
+                    className={`py-2 px-2.5 rounded-xl text-xs font-bold transition-all flex flex-col items-center justify-center gap-0.5 border ${
+                      hostMode === 'localhost'
+                        ? "bg-indigo-600 text-white border-indigo-400 shadow-md shadow-indigo-600/30 ring-1 ring-indigo-400/50"
+                        : "bg-neutral-900 text-neutral-400 border-neutral-800 hover:text-neutral-200"
+                    }`}
+                  >
+                    <span>Localhost</span>
+                    <span className="text-[10px] font-mono opacity-80">localhost:3000</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setHostMode('custom')}
+                    className={`py-2 px-2.5 rounded-xl text-xs font-bold transition-all flex flex-col items-center justify-center gap-0.5 border ${
+                      hostMode === 'custom'
+                        ? "bg-indigo-600 text-white border-indigo-400 shadow-md shadow-indigo-600/30 ring-1 ring-indigo-400/50"
+                        : "bg-neutral-900 text-neutral-400 border-neutral-800 hover:text-neutral-200"
+                    }`}
+                  >
+                    <span>Custom IP</span>
+                    <span className="text-[10px] font-mono opacity-80">e.g. 172.20.10.2</span>
+                  </button>
+                </div>
+
+                {hostMode === 'custom' && (
+                  <div className="pt-1">
+                    <input
+                      type="text"
+                      value={customHost}
+                      onChange={(e) => setCustomHost(e.target.value)}
+                      placeholder="Enter IP:port (e.g. 172.20.10.2:3000 or mychurch.com)"
+                      className="w-full bg-neutral-900 border border-neutral-700 rounded-xl px-3 py-2 text-xs font-mono text-white placeholder-neutral-500 outline-none focus:ring-2 focus:ring-indigo-500"
+                    />
+                  </div>
+                )}
+              </div>
+
               {/* Link & QR Code Card */}
               <div className="grid grid-cols-1 sm:grid-cols-12 gap-4 items-center bg-neutral-900/60 p-4 rounded-2xl border border-neutral-800">
                 <div className="sm:col-span-7 space-y-3">
@@ -528,17 +635,21 @@ export const BroadcastWonderPickerModal: React.FC<BroadcastWonderPickerModalProp
                 <div className="space-y-1">
                   <h3 className="text-sm font-bold text-white flex items-center gap-2">
                     <Wifi size={18} className="text-emerald-400" />
-                    <span>Church Local Network (Wi-Fi LAN)</span>
+                    <span>Church Local Network (Wi-Fi LAN IP)</span>
                   </h3>
                   <p className="text-xs text-neutral-400">
-                    Connect Smart TVs, iPads, and PCs connected to your church Wi-Fi router without consuming internet bandwidth.
+                    Connect Smart TVs, iPads, and mobile phones on your local Wi-Fi router (IP: <span className="font-mono text-emerald-300 font-bold">{lanIp || "172.20.10.2"}</span>).
                   </p>
                 </div>
 
+                {/* 1. Projector Display LAN Link */}
                 <div className="p-3 bg-black/60 border border-neutral-800 rounded-xl space-y-1.5">
                   <div className="flex items-center justify-between text-xs text-neutral-400">
-                    <span className="font-bold text-neutral-300">Local Wi-Fi Projector Link:</span>
-                    <span className="text-[11px] text-emerald-400 font-bold">Fast LAN Sync</span>
+                    <span className="font-bold text-neutral-300 flex items-center gap-1.5">
+                      <Tv size={13} className="text-indigo-400" />
+                      <span>1. Local Wi-Fi Projector Screen:</span>
+                    </span>
+                    <span className="text-[11px] text-emerald-400 font-bold">For Smart TVs & Projectors</span>
                   </div>
                   <div className="flex items-center justify-between gap-2">
                     <span className="text-xs font-mono text-indigo-300 truncate select-all">
@@ -558,6 +669,51 @@ export const BroadcastWonderPickerModal: React.FC<BroadcastWonderPickerModalProp
                     </button>
                   </div>
                 </div>
+
+                {/* 2. Mobile Remote Control LAN Link */}
+                <div className="p-3 bg-black/60 border border-neutral-800 rounded-xl space-y-1.5">
+                  <div className="flex items-center justify-between text-xs text-neutral-400">
+                    <span className="font-bold text-neutral-300 flex items-center gap-1.5">
+                      <Smartphone size={13} className="text-purple-400" />
+                      <span>2. Local Mobile Remote Control:</span>
+                    </span>
+                    <span className="text-[11px] text-purple-400 font-bold">For Phones & Tablets</span>
+                  </div>
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-xs font-mono text-purple-300 truncate select-all">
+                      {remotePhoneUrl}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => handleCopyLink(remotePhoneUrl, 'remote_wifi_url')}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all shrink-0 flex items-center gap-1.5 ${
+                        copiedUrl === 'remote_wifi_url'
+                          ? "bg-purple-600 text-white"
+                          : "bg-purple-700 hover:bg-purple-600 text-white"
+                      }`}
+                    >
+                      {copiedUrl === 'remote_wifi_url' ? <Check size={13} /> : <Copy size={13} />}
+                      <span>{copiedUrl === 'remote_wifi_url' ? "Copied!" : "Copy Remote URL"}</span>
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              {/* Action Buttons */}
+              <div className="flex items-center gap-3">
+                {onOpenRemoteModal && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      onClose();
+                      onOpenRemoteModal();
+                    }}
+                    className="flex-1 px-4 py-2.5 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white rounded-xl text-xs font-bold transition-all shadow-md flex items-center justify-center gap-2"
+                  >
+                    <QrCode size={15} />
+                    <span>Show Mobile Remote QR Code</span>
+                  </button>
+                )}
               </div>
 
               <div className="p-4 rounded-xl bg-black/40 border border-neutral-800/80 space-y-2 text-xs text-neutral-400">
@@ -565,7 +721,7 @@ export const BroadcastWonderPickerModal: React.FC<BroadcastWonderPickerModalProp
                   How Local Wi-Fi Displays Work:
                 </span>
                 <p>
-                  Any TV browser (Samsung, LG, Sony, Fire TV Stick, Apple TV) on the church Wi-Fi can scan the QR code in the <strong>Internet Live Room</strong> tab or open the local link to stream slides effortlessly.
+                  Any TV browser (Samsung, LG, Sony, Fire TV Stick, Apple TV) or mobile phone on the church Wi-Fi can scan the QR code in the <strong>Internet Live Room</strong> tab or open the local IP link above to stream or control slides without consuming internet data.
                 </p>
               </div>
             </div>
