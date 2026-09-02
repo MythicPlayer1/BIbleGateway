@@ -6,8 +6,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { 
   Smartphone, Radio, Wifi, Lock, Unlock, Play, Pause, RotateCcw, 
   EyeOff, Eye, ChevronLeft, ChevronRight, Sparkles, AlertCircle, 
-  CheckCircle2, Layers, Clock, Megaphone, Send, ShieldAlert, Monitor, Zap,
-  Cast
+  CheckCircle2, Layers, Clock, Megaphone, Send, ShieldAlert, Monitor, Zap
 } from "lucide-react";
 import { RemoteOperatorClient } from "@/lib/broadcastSync";
 import type { 
@@ -56,7 +55,6 @@ function RemoteOperatorApp() {
   const [previewItemId, setPreviewItemId] = useState<string | null>(null);
   const [previewSlideIndex, setPreviewSlideIndex] = useState<number>(0);
   const [isInPreviewMode, setIsInPreviewMode] = useState(false);
-  const [isScreenSharing, setIsScreenSharing] = useState(false);
 
   // UI state
   const [activeTab, setActiveTab] = useState<'live' | 'schedule' | 'actions'>('live');
@@ -71,9 +69,23 @@ function RemoteOperatorApp() {
   const lastCommandTimeRef = useRef<number>(0);
   const wakeLockSentinelRef = useRef<any>(null);
 
+  const hasUserInteractedRef = useRef<boolean>(false);
+
+  useEffect(() => {
+    const handleInteraction = () => {
+      hasUserInteractedRef.current = true;
+    };
+    window.addEventListener('pointerdown', handleInteraction, { once: true, passive: true });
+    window.addEventListener('touchstart', handleInteraction, { once: true, passive: true });
+    return () => {
+      window.removeEventListener('pointerdown', handleInteraction);
+      window.removeEventListener('touchstart', handleInteraction);
+    };
+  }, []);
+
   // Industrial Haptic Feedback Trigger
   const triggerHaptic = (type: 'tap' | 'heavy' | 'double' | 'error' = 'tap') => {
-    if (typeof navigator === 'undefined' || !navigator.vibrate) return;
+    if (typeof navigator === 'undefined' || !navigator.vibrate || !hasUserInteractedRef.current) return;
     try {
       if (type === 'tap') navigator.vibrate(18);
       else if (type === 'heavy') navigator.vibrate(35);
@@ -216,8 +228,13 @@ function RemoteOperatorApp() {
     const fetchLiveState = async () => {
       if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
       try {
+        const startTime = performance.now();
         const res = await fetch(`/api/remote-sync?room=${encodeURIComponent(roomCode)}`);
         if (res.ok) {
+          const latency = Math.round(performance.now() - startTime);
+          if (!isWebRtcLive) {
+            setPingMs(latency);
+          }
           const data = await res.json();
           if (isCancelled) return;
 
@@ -241,9 +258,6 @@ function RemoteOperatorApp() {
 
           if (data.state) {
             setLiveState(data.state);
-            if (data.state.updatedAt) {
-              setPingMs(Math.max(12, Math.min(999, Date.now() - data.state.updatedAt)));
-            }
             setActiveControllerId(data.state.activeControllerId || null);
             if (!isInPreviewMode) {
               setPreviewItemId(data.state.activeItemId);
@@ -290,15 +304,21 @@ function RemoteOperatorApp() {
         onCanonicalState: (state) => {
           setIsWebRtcLive(true);
           setLiveState(state);
-          if (state.updatedAt) {
-            const lat = Math.max(1, Math.min(999, Date.now() - state.updatedAt));
-            setPingMs(lat > 3000 ? 4 : lat);
-          }
           setActiveControllerId(state.activeControllerId);
           if (!isInPreviewMode) {
             setPreviewItemId(state.activeItemId);
             setPreviewSlideIndex(state.activeSlideIndex);
           }
+        },
+        onPing: (latencyMs: number) => {
+          setPingMs(prev => {
+            if (prev === null) return latencyMs;
+            // Smooth moving average filter to avoid erratic momentary packet spikes
+            if (latencyMs > 400 && prev < 60) {
+              return prev; // Ignore momentary buffer spike while state packet is in flight
+            }
+            return Math.round(prev * 0.65 + latencyMs * 0.35);
+          });
         },
         onPairingStatus: (resp: PairingResponseMessage) => {
           setIsWebRtcLive(true);
@@ -412,9 +432,16 @@ function RemoteOperatorApp() {
       const totalSlides = curItem?.slides?.length || curItem?.slideCount || 1;
 
       if (curSlideIdx < totalSlides - 1) {
-        // Next slide in current item
+        // Next slide in current item (Instant 0ms Optimistic UI)
         const nextSlide = curSlideIdx + 1;
-        setLiveState(prev => prev ? { ...prev, activeSlideIndex: nextSlide } : prev);
+        const targetSlide = curItem.slides?.[nextSlide];
+        const targetText = targetSlide?.text || targetSlide?.lines?.join('\n') || '';
+        setLiveState(prev => prev ? {
+          ...prev,
+          activeSlideIndex: nextSlide,
+          activeSlideText: targetText || prev.activeSlideText,
+          activeSlideSection: targetSlide?.section || `Slide ${nextSlide + 1}`
+        } : prev);
         sendCommand('PRESENTATION_GO_LIVE', {
           itemId: curItem.id,
           slideIndex: nextSlide
@@ -423,7 +450,16 @@ function RemoteOperatorApp() {
       } else if (curItemIdx < items.length - 1) {
         // Advance to next song/item in schedule
         const nextItem = items[curItemIdx + 1];
-        setLiveState(prev => prev ? { ...prev, activeItemId: nextItem.id, activeSlideIndex: 0 } : prev);
+        const firstSlide = nextItem.slides?.[0];
+        const firstText = firstSlide?.text || firstSlide?.lines?.join('\n') || '';
+        setLiveState(prev => prev ? {
+          ...prev,
+          activeItemId: nextItem.id,
+          activeSlideIndex: 0,
+          activeItemTitle: nextItem.title,
+          activeSlideText: firstText || prev.activeSlideText,
+          activeSlideSection: firstSlide?.section || 'Slide 1'
+        } : prev);
         sendCommand('PRESENTATION_GO_LIVE', {
           itemId: nextItem.id,
           slideIndex: 0
@@ -443,7 +479,7 @@ function RemoteOperatorApp() {
     }
     triggerHaptic('tap');
 
-    // Smart Deterministic Schedule Item Navigation (Backwards)
+    // Smart Deterministic Schedule Item Navigation (Backwards with Instant Optimistic UI)
     if (liveState && liveState.scheduleItems && liveState.scheduleItems.length > 0) {
       const items = liveState.scheduleItems;
       const curItemIdx = items.findIndex(i => i.id === liveState.activeItemId);
@@ -453,7 +489,14 @@ function RemoteOperatorApp() {
       if (curSlideIdx > 0) {
         // Previous slide in current item
         const prevSlide = curSlideIdx - 1;
-        setLiveState(prev => prev ? { ...prev, activeSlideIndex: prevSlide } : prev);
+        const targetSlide = curItem.slides?.[prevSlide];
+        const targetText = targetSlide?.text || targetSlide?.lines?.join('\n') || '';
+        setLiveState(prev => prev ? {
+          ...prev,
+          activeSlideIndex: prevSlide,
+          activeSlideText: targetText || prev.activeSlideText,
+          activeSlideSection: targetSlide?.section || `Slide ${prevSlide + 1}`
+        } : prev);
         sendCommand('PRESENTATION_GO_LIVE', {
           itemId: curItem.id,
           slideIndex: prevSlide
@@ -463,11 +506,20 @@ function RemoteOperatorApp() {
         // Back to previous song/item in schedule
         const prevItem = items[curItemIdx - 1];
         const prevSlidesCount = prevItem?.slides?.length || prevItem?.slideCount || 1;
-        const targetSlide = Math.max(0, prevSlidesCount - 1);
-        setLiveState(prev => prev ? { ...prev, activeItemId: prevItem.id, activeSlideIndex: targetSlide } : prev);
+        const targetSlideIdx = Math.max(0, prevSlidesCount - 1);
+        const targetSlide = prevItem?.slides?.[targetSlideIdx];
+        const targetText = targetSlide?.text || targetSlide?.lines?.join('\n') || '';
+        setLiveState(prev => prev ? {
+          ...prev,
+          activeItemId: prevItem.id,
+          activeSlideIndex: targetSlideIdx,
+          activeItemTitle: prevItem.title,
+          activeSlideText: targetText || prev.activeSlideText,
+          activeSlideSection: targetSlide?.section || `Slide ${targetSlideIdx + 1}`
+        } : prev);
         sendCommand('PRESENTATION_GO_LIVE', {
           itemId: prevItem.id,
-          slideIndex: targetSlide
+          slideIndex: targetSlideIdx
         });
         showToast(`Jumped to: ${prevItem.title}`);
         return;
@@ -536,24 +588,6 @@ function RemoteOperatorApp() {
     sendCommand('COUNTDOWN_RESET', { seconds: 300 });
   };
 
-  const handleToggleScreenShare = async () => {
-    triggerHaptic('heavy');
-    if (isScreenSharing) {
-      clientRef.current?.stopScreenShare();
-      setIsScreenSharing(false);
-      showToast("⏹️ Screen share stopped");
-    } else {
-      showToast("🖥️ Opening screen & audio share...");
-      const res = await clientRef.current?.startScreenShare();
-      if (res?.success) {
-        setIsScreenSharing(true);
-        showToast("🔴 Screen + Audio live on projector!");
-      } else {
-        showToast(`❌ ${res?.error || "Screen share cancelled"}`);
-      }
-    }
-  };
-
   // Hardware Bluetooth Clicker & Keyboard Listener (Space, Arrow keys, PageUp/Down)
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -594,6 +628,21 @@ function RemoteOperatorApp() {
 
   const handleReleaseControl = () => {
     sendCommand('RELEASE_CONTROL_LOCK');
+  };
+
+  const handleRequestOperatorRole = async () => {
+    triggerHaptic('heavy');
+    showToast("🙋 Requesting Operator Control...");
+    try {
+      if (clientRef.current?.isConnected) {
+        await clientRef.current.sendCommand('REQUEST_ROLE_UPGRADE', { role: 'operator' });
+      } else {
+        await sendCommand('REQUEST_ROLE_UPGRADE', { role: 'operator' });
+      }
+      showToast("⏳ Permission request sent to Desktop Host!");
+    } catch {
+      showToast("❌ Could not send permission request");
+    }
   };
 
   // Touch Swipe on Live Preview Card
@@ -692,16 +741,38 @@ function RemoteOperatorApp() {
 
           {isConnectedAndPaired ? (
             <div className="flex items-center gap-1.5">
-              {isWebRtcLive ? (
-                <span className="px-2 py-0.5 rounded-full bg-emerald-950/90 text-emerald-300 border border-emerald-500/40 text-[9px] font-mono font-black flex items-center gap-1">
-                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
-                  {pingMs ? `${pingMs}ms` : '<5ms'} P2P
-                </span>
-              ) : (
-                <span className="px-2 py-0.5 rounded-full bg-amber-950/90 text-amber-300 border border-amber-500/40 text-[9px] font-mono font-black flex items-center gap-1">
-                  <Wifi size={9} className="text-amber-400" /> {pingMs ? `${pingMs}ms` : 'LAN'}
-                </span>
-              )}
+              {(() => {
+                const val = pingMs !== null ? pingMs : (isWebRtcLive ? 5 : 20);
+                const displayLabel = pingMs !== null ? `${pingMs}ms` : (isWebRtcLive ? '<5ms' : 'LAN');
+                
+                let pillStyle = "bg-emerald-950/90 text-emerald-300 border-emerald-500/50";
+                let dotStyle = "bg-emerald-400 animate-pulse";
+
+                if (val <= 50) {
+                  // 🟢 < 50ms: Emerald Green (Ultra Low Latency)
+                  pillStyle = "bg-emerald-950/90 text-emerald-300 border-emerald-500/50 shadow-[0_0_8px_rgba(16,185,129,0.2)]";
+                  dotStyle = "bg-emerald-400 animate-pulse";
+                } else if (val <= 120) {
+                  // 🔵 51-120ms: Cyan / Sky (Good)
+                  pillStyle = "bg-sky-950/90 text-sky-300 border-sky-500/50 shadow-[0_0_8px_rgba(14,165,233,0.2)]";
+                  dotStyle = "bg-sky-400 animate-pulse";
+                } else if (val <= 250) {
+                  // 🟡 121-250ms: Amber / Yellow (Moderate)
+                  pillStyle = "bg-amber-950/90 text-amber-300 border-amber-500/50 shadow-[0_0_8px_rgba(245,158,11,0.2)]";
+                  dotStyle = "bg-amber-400 animate-pulse";
+                } else {
+                  // 🔴 > 250ms: Rose / Red (High Latency)
+                  pillStyle = "bg-rose-950/90 text-rose-300 border-rose-500/60 shadow-[0_0_10px_rgba(244,63,94,0.3)] animate-pulse";
+                  dotStyle = "bg-rose-400 animate-ping";
+                }
+
+                return (
+                  <span className={`px-2 py-0.5 rounded-full border text-[9px] font-mono font-black flex items-center gap-1.5 transition-all duration-300 ${pillStyle}`}>
+                    <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${dotStyle}`}></span>
+                    <span>{displayLabel} {isWebRtcLive ? 'P2P' : 'LAN'}</span>
+                  </span>
+                );
+              })()}
               <span className={`px-2.5 py-0.5 rounded-full border text-[10px] font-bold ${roleBadge.color}`}>
                 {roleBadge.label}
               </span>
@@ -718,13 +789,21 @@ function RemoteOperatorApp() {
         </div>
       </header>
 
-      {/* Viewer Read-Only Warning Notice Banner */}
+      {/* Viewer Read-Only Notice Banner with Interactive Request Control Button */}
       {isConnectedAndPaired && !currentPermissions.canControlSlides && (
-        <div className="shrink-0 px-4 py-2 bg-amber-950/60 border-b border-amber-700/50 text-amber-300 text-xs font-semibold flex items-center justify-between">
-          <div className="flex items-center gap-1.5">
+        <div className="shrink-0 px-3.5 py-2 bg-amber-950/80 border-b border-amber-600/40 text-amber-200 text-xs font-semibold flex items-center justify-between gap-2 shadow-lg backdrop-blur-md">
+          <div className="flex items-center gap-1.5 min-w-0">
             <AlertCircle size={14} className="text-amber-400 shrink-0" />
-            <span>View-Only Mode: Ask the desktop operator to upgrade your role to control slides.</span>
+            <span className="truncate">View-Only Stage Monitor</span>
           </div>
+          <button
+            type="button"
+            onClick={handleRequestOperatorRole}
+            className="shrink-0 px-3 py-1 bg-amber-400 hover:bg-amber-300 active:scale-95 text-neutral-950 font-black text-[11px] rounded-lg transition-all shadow-md flex items-center gap-1.5"
+          >
+            <ShieldAlert size={12} className="text-neutral-950" />
+            <span>Request Control</span>
+          </button>
         </div>
       )}
 
@@ -760,7 +839,7 @@ function RemoteOperatorApp() {
             <button
               type="button"
               onClick={handleReleaseControl}
-              className="px-2 py-0.5 rounded-lg bg-indigo-600/30 text-indigo-300 border border-indigo-500/40 text-[11px] font-semibold"
+              className="px-2.5 py-1 rounded-lg bg-indigo-600/30 hover:bg-indigo-600/50 text-indigo-300 border border-indigo-500/40 text-[11px] font-bold transition-all"
             >
               Release Lock
             </button>
@@ -768,9 +847,11 @@ function RemoteOperatorApp() {
             <button
               type="button"
               onClick={handleRequestControl}
-              className="px-2.5 py-1 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-black text-[11px] shadow-sm transition-colors"
+              className="px-2.5 py-1 rounded-lg bg-neutral-800 hover:bg-neutral-700 border border-neutral-700 text-neutral-200 font-bold text-[11px] shadow-sm transition-all active:scale-95 flex items-center gap-1"
+              title="Acquire exclusive control lock so other devices cannot interfere"
             >
-              Request Control
+              <Lock size={11} className="text-indigo-400" />
+              <span>Lock Control</span>
             </button>
           )}
         </div>
@@ -889,8 +970,8 @@ function RemoteOperatorApp() {
           {/* ================================================================= */}
           <div className="shrink-0 px-3.5 pt-2 pb-2 bg-neutral-950/95 backdrop-blur-xl border-b border-neutral-800/80 shadow-2xl z-20 space-y-2 max-w-lg mx-auto w-full">
             
-            {/* Quick Stage Controls Strip (Blackout, Timer, Ticker, Screen Cast) */}
-            <div className="grid grid-cols-4 gap-1.5">
+            {/* Quick Stage Controls Strip (Blackout, Timer, Ticker) */}
+            <div className="grid grid-cols-3 gap-2">
               <button
                 type="button"
                 onClick={handleToggleHideText}
@@ -937,19 +1018,6 @@ function RemoteOperatorApp() {
               >
                 <Megaphone size={12} className={liveState?.tickerConfig?.enabled ? "text-white" : "text-indigo-400"} />
                 <span>{liveState?.tickerConfig?.enabled ? "TICKER" : "TICKER"}</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={handleToggleScreenShare}
-                className={`py-1.5 px-2 rounded-xl font-black text-[11px] flex items-center justify-center gap-1 transition-all shadow-sm ${
-                  isScreenSharing
-                    ? "bg-rose-600 text-white ring-2 ring-rose-400 font-black animate-pulse"
-                    : "bg-neutral-900 text-neutral-300 hover:bg-neutral-800 border border-neutral-800 active:scale-95"
-                }`}
-              >
-                <Cast size={12} className={isScreenSharing ? "text-white" : "text-emerald-400"} />
-                <span>{isScreenSharing ? "STOP" : "CAST"}</span>
               </button>
             </div>
 
@@ -1125,6 +1193,19 @@ function RemoteOperatorApp() {
                                     return;
                                   }
                                   triggerHaptic('heavy');
+                                  // ⚡ Optimistic UI Update: Instantly update active slide on mobile with 0ms perceived lag
+                                  const targetSlideText = s.text || s.lines?.join('\n') || '';
+                                  const targetCitation = (s as any).slideCitation || (item.type === 'scripture' ? item.title : '');
+                                  setLiveState(prev => prev ? {
+                                    ...prev,
+                                    activeItemId: item.id,
+                                    activeSlideIndex: sIdx,
+                                    activeItemTitle: item.title,
+                                    activeSlideText: targetSlideText || prev.activeSlideText,
+                                    activeSlideCitation: targetCitation || prev.activeSlideCitation,
+                                    activeSlideSection: s.section || `Slide ${sIdx + 1}`
+                                  } : prev);
+
                                   sendCommand('PRESENTATION_GO_LIVE', {
                                     itemId: item.id,
                                     slideIndex: sIdx

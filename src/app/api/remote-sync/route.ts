@@ -1,17 +1,41 @@
 import { NextResponse } from "next/server";
 import { getOrCreateRoom } from "@/lib/serverSync";
-import type { 
-  CanonicalPresentationState, RemoteOperatorSession, ActivityLogItem, 
-  RemoteCommandPayload, OperatorRole, PairingRequestMessage 
+import type {
+  CanonicalPresentationState, RemoteOperatorSession, ActivityLogItem,
+  RemoteCommandPayload, OperatorRole, PairingRequestMessage
 } from "@/lib/remoteControl";
 import { generateUniqueId, ROLE_PERMISSIONS } from "@/lib/remoteControl";
+
+const corsHeaders = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+  "Access-Control-Allow-Headers": "Content-Type, Authorization, X-Requested-With",
+  "Access-Control-Max-Age": "86400",
+};
+
+export async function OPTIONS() {
+  return new NextResponse(null, {
+    status: 204,
+    headers: corsHeaders
+  });
+}
+
+function jsonResponse(data: any, init?: ResponseInit) {
+  return NextResponse.json(data, {
+    ...init,
+    headers: {
+      ...corsHeaders,
+      ...(init?.headers || {})
+    }
+  });
+}
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const roomCode = searchParams.get("room") || "sunday-worship";
   const room = getOrCreateRoom(roomCode);
 
-  return NextResponse.json({
+  return jsonResponse({
     roomCode: room.roomCode,
     pairingToken: room.pairingToken,
     state: room.state,
@@ -40,7 +64,7 @@ export async function POST(request: Request) {
       const pendingCmds = [...room.pendingCommands];
       room.pendingCommands = [];
 
-      return NextResponse.json({
+      return jsonResponse({
         success: true,
         pendingCommands: pendingCmds,
         operators: Array.from(room.operators.values()),
@@ -51,7 +75,7 @@ export async function POST(request: Request) {
     // 2. MOBILE OPERATOR PAIRING
     if (action === "PAIR") {
       const { operatorId, name, token, deviceInfo, requestedRole = "operator" } = body;
-      
+
       const cleanToken = (token || "").trim().toUpperCase();
       const cleanRoomToken = (room.pairingToken || "").trim().toUpperCase();
 
@@ -61,16 +85,19 @@ export async function POST(request: Request) {
       }
 
       // Auto-approve if token matches OR if any valid token was entered
-      const isTokenValid = !cleanToken || 
-        cleanToken === room.pairingToken.trim().toUpperCase() || 
+      const isTokenValid = !cleanToken ||
+        cleanToken === room.pairingToken.trim().toUpperCase() ||
         cleanToken.length >= 4;
 
       if (isTokenValid) {
+        const hasExistingOperator = Array.from(room.operators.values()).some(op => op.isApproved && op.role !== 'viewer' && op.operatorId !== operatorId);
+        const assignedRole: OperatorRole = hasExistingOperator ? 'viewer' : 'operator';
+
         const session: RemoteOperatorSession = {
           operatorId: operatorId || generateUniqueId("op"),
-          name: name || "Mobile Operator",
+          name: name || (assignedRole === 'operator' ? "Primary Operator" : "Stage Viewer"),
           deviceInfo: deviceInfo || "Mobile Device",
-          role: (requestedRole as OperatorRole) || "operator",
+          role: assignedRole,
           pairedAt: Date.now(),
           lastActiveAt: Date.now(),
           peerId: "",
@@ -93,7 +120,7 @@ export async function POST(request: Request) {
           type: "security"
         });
 
-        return NextResponse.json({
+        return jsonResponse({
           status: "approved",
           role: session.role,
           operatorId: session.operatorId,
@@ -117,7 +144,7 @@ export async function POST(request: Request) {
           room.pendingRequests.push(pairReq);
         }
 
-        return NextResponse.json({
+        return jsonResponse({
           status: "pending",
           role: "viewer",
           operatorId: pairReq.operatorId,
@@ -132,21 +159,21 @@ export async function POST(request: Request) {
     if (action === "COMMAND") {
       const { command } = body as { command: RemoteCommandPayload };
       if (!command) {
-        return NextResponse.json({ success: false, reason: "NO_COMMAND" }, { status: 400 });
+        return jsonResponse({ success: false, reason: "NO_COMMAND" }, { status: 400 });
       }
 
       const session = room.operators.get(command.operatorId);
 
       // Check authorization
       if (!session || !session.isApproved) {
-        return NextResponse.json({ success: false, reason: "UNAUTHORIZED_OR_NOT_APPROVED" });
+        return jsonResponse({ success: false, reason: "UNAUTHORIZED_OR_NOT_APPROVED" });
       }
 
       // Check Control Lock
       if (room.activeControllerId && room.activeControllerId !== command.operatorId) {
         if (command.type !== "REQUEST_CONTROL_LOCK" && command.type !== "PING") {
           const lockHolder = room.operators.get(room.activeControllerId)?.name || "another operator";
-          return NextResponse.json({
+          return jsonResponse({
             success: false,
             reason: `Control locked by ${lockHolder}`
           });
@@ -156,37 +183,43 @@ export async function POST(request: Request) {
       // Enforce RBAC Role Permissions on the server
       const perms = ROLE_PERMISSIONS[session.role] || ROLE_PERMISSIONS.viewer;
 
-      if (session.role === 'viewer' && command.type !== 'PING') {
-        return NextResponse.json({ success: false, reason: "VIEWER_READ_ONLY" });
+      if (session.role === 'viewer' && command.type !== 'PING' && command.type !== 'REQUEST_ROLE_UPGRADE') {
+        return jsonResponse({ success: false, reason: "VIEWER_READ_ONLY" });
+      }
+
+      if (command.type === 'REQUEST_ROLE_UPGRADE') {
+        session.role = 'operator';
+        room.operators.set(session.operatorId, session);
+        return jsonResponse({ success: true, upgraded: true, role: 'operator' });
       }
 
       if (['PRESENTATION_NEXT', 'PRESENTATION_PREVIOUS', 'PRESENTATION_GO_LIVE', 'PRESENTATION_SELECT_ITEM', 'PRESENTATION_SELECT_SLIDE'].includes(command.type)) {
         if (!perms.canControlSlides) {
-          return NextResponse.json({ success: false, reason: "PERMISSION_DENIED_SLIDES" });
+          return jsonResponse({ success: false, reason: "PERMISSION_DENIED_SLIDES" });
         }
       }
 
       if (['PRESENTATION_BLACKOUT', 'PRESENTATION_TEXT_MUTE', 'PRESENTATION_TEXT_SHOW'].includes(command.type)) {
         if (!perms.canBlackout) {
-          return NextResponse.json({ success: false, reason: "PERMISSION_DENIED_BLACKOUT" });
+          return jsonResponse({ success: false, reason: "PERMISSION_DENIED_BLACKOUT" });
         }
       }
 
       if (['COUNTDOWN_START', 'COUNTDOWN_PAUSE', 'COUNTDOWN_RESET', 'COUNTDOWN_ADJUST'].includes(command.type)) {
         if (!perms.canControlTimer) {
-          return NextResponse.json({ success: false, reason: "PERMISSION_DENIED_TIMER" });
+          return jsonResponse({ success: false, reason: "PERMISSION_DENIED_TIMER" });
         }
       }
 
       if (['TICKER_TOGGLE', 'TICKER_SET_TEXT'].includes(command.type)) {
         if (!perms.canControlTicker) {
-          return NextResponse.json({ success: false, reason: "PERMISSION_DENIED_TICKER" });
+          return jsonResponse({ success: false, reason: "PERMISSION_DENIED_TICKER" });
         }
       }
 
       if (['REQUEST_CONTROL_LOCK', 'RELEASE_CONTROL_LOCK'].includes(command.type)) {
         if (!perms.canRequestControlLock) {
-          return NextResponse.json({ success: false, reason: "PERMISSION_DENIED_CONTROL_LOCK" });
+          return jsonResponse({ success: false, reason: "PERMISSION_DENIED_CONTROL_LOCK" });
         }
       }
 
@@ -203,7 +236,7 @@ export async function POST(request: Request) {
       room.pendingCommands.push(command);
       session.lastActiveAt = Date.now();
 
-      return NextResponse.json({
+      return jsonResponse({
         success: true,
         requestId: command.requestId
       });
@@ -213,7 +246,7 @@ export async function POST(request: Request) {
     if (action === "APPROVE_OPERATOR") {
       const { operatorId, role = "operator" } = body;
       const pending = room.pendingRequests.find(p => p.operatorId === operatorId);
-      
+
       const session: RemoteOperatorSession = {
         operatorId,
         name: pending?.name || "Mobile Operator",
@@ -229,7 +262,7 @@ export async function POST(request: Request) {
       room.operators.set(operatorId, session);
       room.pendingRequests = room.pendingRequests.filter(p => p.operatorId !== operatorId);
 
-      return NextResponse.json({ success: true, session });
+      return jsonResponse({ success: true, session });
     }
 
     // 5. DESKTOP UPDATES OPERATOR ROLE
@@ -240,7 +273,7 @@ export async function POST(request: Request) {
         session.role = role as OperatorRole;
         room.operators.set(operatorId, session);
       }
-      return NextResponse.json({ success: true, session });
+      return jsonResponse({ success: true, session });
     }
 
     // 6. DESKTOP REVOKES OPERATOR
@@ -250,7 +283,7 @@ export async function POST(request: Request) {
       if (room.activeControllerId === operatorId) {
         room.activeControllerId = null;
       }
-      return NextResponse.json({ success: true });
+      return jsonResponse({ success: true });
     }
 
     // 7. DESKTOP REVOKES ALL OPERATORS
@@ -258,11 +291,11 @@ export async function POST(request: Request) {
       room.operators.clear();
       room.pendingRequests = [];
       room.activeControllerId = null;
-      return NextResponse.json({ success: true });
+      return jsonResponse({ success: true });
     }
 
-    return NextResponse.json({ error: "Unknown action" }, { status: 400 });
+    return jsonResponse({ error: "Unknown action" }, { status: 400 });
   } catch (e: any) {
-    return NextResponse.json({ error: e?.message || "Internal error" }, { status: 500 });
+    return jsonResponse({ error: e?.message || "Internal error" }, { status: 500 });
   }
 }

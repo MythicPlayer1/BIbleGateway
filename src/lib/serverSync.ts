@@ -1,6 +1,6 @@
-import type { 
-  CanonicalPresentationState, RemoteOperatorSession, ActivityLogItem, 
-  RemoteCommandPayload, OperatorRole, PairingRequestMessage 
+import type {
+  CanonicalPresentationState, RemoteOperatorSession, ActivityLogItem,
+  RemoteCommandPayload, OperatorRole, PairingRequestMessage
 } from "@/lib/remoteControl";
 
 export interface ServerSyncRoom {

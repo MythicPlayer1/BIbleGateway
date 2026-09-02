@@ -67,7 +67,7 @@ export const RemoteOperatorModal: React.FC<RemoteOperatorModalProps> = ({
       fetch("/api/network-ip")
         .then(res => res.json())
         .then(data => {
-          if (data?.ip && data.ip !== "localhost") {
+          if (data?.ip && data.ip !== "localhost" && !data.ip.startsWith("169.254.")) {
             setLanIp(data.ip);
           }
         })

@@ -1,8 +1,8 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import { 
-  Radio, X, Copy, Check, QrCode, Globe, Tv, 
+import {
+  Radio, X, Copy, Check, QrCode, Globe, Tv,
   Layers, ExternalLink, ShieldCheck, Wifi, Sparkles, RefreshCw
 } from "lucide-react";
 import QRCode from "qrcode";
@@ -33,8 +33,9 @@ export const BroadcastModal: React.FC<BroadcastModalProps> = ({
   const [originUrl, setOriginUrl] = useState<string>("");
   const [lanIp, setLanIp] = useState<string>("");
   const [allIps, setAllIps] = useState<Array<{ name: string; ip: string }>>([]);
-  const [hostMode, setHostMode] = useState<'lan' | 'localhost' | 'custom'>('lan');
+  const [hostMode, setHostMode] = useState<'domain' | 'lan' | 'localhost' | 'custom'>('domain');
   const [customHost, setCustomHost] = useState<string>("");
+  const [isDomainMode, setIsDomainMode] = useState(false);
 
   useEffect(() => {
     setLocalRoomInput(roomCode);
@@ -43,17 +44,28 @@ export const BroadcastModal: React.FC<BroadcastModalProps> = ({
   useEffect(() => {
     if (typeof window !== "undefined") {
       setOriginUrl(window.location.origin);
+      const isPublicDomain = window.location.hostname !== "localhost" &&
+        window.location.hostname !== "127.0.0.1" &&
+        !/^\d+\.\d+\.\d+\.\d+$/.test(window.location.hostname);
+
+      setIsDomainMode(isPublicDomain);
+      if (isPublicDomain) {
+        setHostMode('domain');
+      } else {
+        setHostMode('lan');
+      }
+
       fetch("/api/network-ip")
         .then(res => res.json())
         .then(data => {
-          if (data?.ip && data.ip !== "localhost") {
+          if (data?.ip && data.ip !== "localhost" && !data.ip.startsWith("169.254.")) {
             setLanIp(data.ip);
           }
           if (data?.interfaces) {
             setAllIps(data.interfaces);
           }
         })
-        .catch(() => {});
+        .catch(() => { });
     }
   }, []);
 
@@ -62,7 +74,10 @@ export const BroadcastModal: React.FC<BroadcastModalProps> = ({
     const port = window.location.port ? `:${window.location.port}` : "";
     const protocol = window.location.protocol;
 
-    if (hostMode === 'lan' && lanIp) {
+    if (hostMode === 'domain' || (isDomainMode && hostMode !== 'custom' && hostMode !== 'lan' && hostMode !== 'localhost')) {
+      return window.location.origin;
+    }
+    if (hostMode === 'lan' && lanIp && !lanIp.startsWith("169.254.")) {
       return `${protocol}//${lanIp}${port}`;
     }
     if (hostMode === 'custom' && customHost.trim()) {
@@ -74,8 +89,8 @@ export const BroadcastModal: React.FC<BroadcastModalProps> = ({
 
   const effectiveOrigin = getEffectiveOrigin();
 
-  const fullShareUrl = effectiveOrigin 
-    ? `${effectiveOrigin}/projector?room=${encodeURIComponent(localRoomInput.trim() || roomCode)}` 
+  const fullShareUrl = effectiveOrigin
+    ? `${effectiveOrigin}/projector?room=${encodeURIComponent(localRoomInput.trim() || roomCode)}`
     : `/projector?room=${encodeURIComponent(localRoomInput.trim() || roomCode)}`;
 
   const remoteControlUrl = effectiveOrigin
@@ -95,7 +110,7 @@ export const BroadcastModal: React.FC<BroadcastModalProps> = ({
       }
     })
       .then((url) => setQrDataUrl(url))
-      .catch(() => {});
+      .catch(() => { });
   }, [fullShareUrl, isOpen]);
 
   if (!isOpen) return null;
@@ -120,11 +135,10 @@ export const BroadcastModal: React.FC<BroadcastModalProps> = ({
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-neutral-800/80 bg-neutral-900/40">
           <div className="flex items-center gap-2.5">
-            <div className={`p-2 rounded-xl border ${
-              isBroadcasting 
-                ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/30 shadow-[0_0_15px_rgba(16,185,129,0.2)]" 
+            <div className={`p-2 rounded-xl border ${isBroadcasting
+                ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/30 shadow-[0_0_15px_rgba(16,185,129,0.2)]"
                 : "bg-neutral-800 text-neutral-400 border-neutral-700"
-            }`}>
+              }`}>
               <Radio size={18} className={isBroadcasting ? "animate-pulse" : ""} />
             </div>
             <div>
@@ -154,11 +168,10 @@ export const BroadcastModal: React.FC<BroadcastModalProps> = ({
         {/* Content Body */}
         <div className="p-6 space-y-5 overflow-y-auto flex-1 custom-scrollbar">
           {/* 1. Main Broadcast Switch Card */}
-          <div className={`p-4 rounded-2xl border transition-all flex items-center justify-between gap-4 ${
-            isBroadcasting
+          <div className={`p-4 rounded-2xl border transition-all flex items-center justify-between gap-4 ${isBroadcasting
               ? "bg-emerald-950/30 border-emerald-500/40 shadow-inner"
               : "bg-neutral-900/50 border-neutral-800"
-          }`}>
+            }`}>
             <div className="space-y-1">
               <div className="flex items-center gap-2">
                 <Wifi size={16} className={isBroadcasting ? "text-emerald-400" : "text-neutral-500"} />
@@ -176,11 +189,10 @@ export const BroadcastModal: React.FC<BroadcastModalProps> = ({
             <button
               type="button"
               onClick={() => onToggleBroadcast(!isBroadcasting)}
-              className={`px-5 py-2.5 rounded-xl font-bold text-xs shadow-md transition-all active:scale-95 flex items-center gap-2 ${
-                isBroadcasting
+              className={`px-5 py-2.5 rounded-xl font-bold text-xs shadow-md transition-all active:scale-95 flex items-center gap-2 ${isBroadcasting
                   ? "bg-rose-600 hover:bg-rose-500 text-white shadow-rose-600/30"
                   : "bg-emerald-600 hover:bg-emerald-500 text-white shadow-emerald-600/30"
-              }`}
+                }`}
             >
               <Radio size={14} className={isBroadcasting ? "animate-pulse" : ""} />
               <span>{isBroadcasting ? "Stop Broadcast" : "Go Live (Start)"}</span>
@@ -227,15 +239,33 @@ export const BroadcastModal: React.FC<BroadcastModalProps> = ({
               </span>
             </div>
 
-            <div className="grid grid-cols-3 gap-2">
+            <div className={`grid ${isDomainMode ? "grid-cols-4" : "grid-cols-3"} gap-2`}>
+              {isDomainMode && (
+                <button
+                  type="button"
+                  onClick={() => setHostMode('domain')}
+                  className={`py-2 px-2 rounded-xl text-xs font-bold transition-all flex flex-col items-center justify-center gap-0.5 border ${hostMode === 'domain'
+                      ? "bg-indigo-600 text-white border-indigo-400 shadow-md shadow-indigo-600/30 ring-1 ring-indigo-400/50"
+                      : "bg-neutral-900 text-neutral-400 border-neutral-800 hover:text-neutral-200"
+                    }`}
+                >
+                  <span className="flex items-center gap-1">
+                    <Globe size={12} className={hostMode === 'domain' ? "text-white" : "text-indigo-400"} />
+                    <span>Domain</span>
+                  </span>
+                  <span className="text-[10px] font-mono opacity-80 truncate max-w-[90px]">
+                    {typeof window !== "undefined" ? window.location.hostname : "Domain"}
+                  </span>
+                </button>
+              )}
+
               <button
                 type="button"
                 onClick={() => setHostMode('lan')}
-                className={`py-2 px-2.5 rounded-xl text-xs font-bold transition-all flex flex-col items-center justify-center gap-0.5 border ${
-                  hostMode === 'lan'
+                className={`py-2 px-2.5 rounded-xl text-xs font-bold transition-all flex flex-col items-center justify-center gap-0.5 border ${hostMode === 'lan'
                     ? "bg-indigo-600 text-white border-indigo-400 shadow-md shadow-indigo-600/30 ring-1 ring-indigo-400/50"
                     : "bg-neutral-900 text-neutral-400 border-neutral-800 hover:text-neutral-200"
-                }`}
+                  }`}
               >
                 <span className="flex items-center gap-1">
                   <Wifi size={12} className={hostMode === 'lan' ? "text-white" : "text-emerald-400"} />
@@ -249,11 +279,10 @@ export const BroadcastModal: React.FC<BroadcastModalProps> = ({
               <button
                 type="button"
                 onClick={() => setHostMode('localhost')}
-                className={`py-2 px-2.5 rounded-xl text-xs font-bold transition-all flex flex-col items-center justify-center gap-0.5 border ${
-                  hostMode === 'localhost'
+                className={`py-2 px-2.5 rounded-xl text-xs font-bold transition-all flex flex-col items-center justify-center gap-0.5 border ${hostMode === 'localhost'
                     ? "bg-indigo-600 text-white border-indigo-400 shadow-md shadow-indigo-600/30 ring-1 ring-indigo-400/50"
                     : "bg-neutral-900 text-neutral-400 border-neutral-800 hover:text-neutral-200"
-                }`}
+                  }`}
               >
                 <span>Localhost</span>
                 <span className="text-[10px] font-mono opacity-80">localhost:3000</span>
@@ -262,14 +291,13 @@ export const BroadcastModal: React.FC<BroadcastModalProps> = ({
               <button
                 type="button"
                 onClick={() => setHostMode('custom')}
-                className={`py-2 px-2.5 rounded-xl text-xs font-bold transition-all flex flex-col items-center justify-center gap-0.5 border ${
-                  hostMode === 'custom'
+                className={`py-2 px-2.5 rounded-xl text-xs font-bold transition-all flex flex-col items-center justify-center gap-0.5 border ${hostMode === 'custom'
                     ? "bg-indigo-600 text-white border-indigo-400 shadow-md shadow-indigo-600/30 ring-1 ring-indigo-400/50"
                     : "bg-neutral-900 text-neutral-400 border-neutral-800 hover:text-neutral-200"
-                }`}
+                  }`}
               >
-                <span>Custom IP</span>
-                <span className="text-[10px] font-mono opacity-80">e.g. 172.20.10.2</span>
+                <span>Custom</span>
+                <span className="text-[10px] font-mono opacity-80">Enter Host</span>
               </button>
             </div>
 
@@ -307,11 +335,10 @@ export const BroadcastModal: React.FC<BroadcastModalProps> = ({
                 <button
                   type="button"
                   onClick={handleCopyLink}
-                  className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all shrink-0 flex items-center gap-1.5 ${
-                    copied
+                  className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all shrink-0 flex items-center gap-1.5 ${copied
                       ? "bg-emerald-600 text-white shadow-sm"
                       : "bg-indigo-600 hover:bg-indigo-500 text-white shadow-md shadow-indigo-600/30"
-                  }`}
+                    }`}
                   title="Copy full broadcast URL"
                 >
                   {copied ? <Check size={13} /> : <Copy size={13} />}

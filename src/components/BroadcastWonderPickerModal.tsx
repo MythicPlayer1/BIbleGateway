@@ -1,8 +1,8 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import { 
-  Radio, X, Copy, Check, QrCode, Globe, Tv, 
+import {
+  Radio, X, Copy, Check, QrCode, Globe, Tv,
   Layers, ExternalLink, ShieldCheck, Wifi, Sparkles, RefreshCw,
   Monitor, Video, Smartphone, ArrowRight, Cast, CheckCircle2
 } from "lucide-react";
@@ -45,8 +45,9 @@ export const BroadcastWonderPickerModal: React.FC<BroadcastWonderPickerModalProp
   const [originUrl, setOriginUrl] = useState<string>("");
   const [lanIp, setLanIp] = useState<string>("");
   const [allIps, setAllIps] = useState<Array<{ name: string; ip: string }>>([]);
-  const [hostMode, setHostMode] = useState<'lan' | 'localhost' | 'custom'>('lan');
+  const [hostMode, setHostMode] = useState<'domain' | 'lan' | 'localhost' | 'custom'>('domain');
   const [customHost, setCustomHost] = useState<string>("");
+  const [isDomainMode, setIsDomainMode] = useState(false);
 
   useEffect(() => {
     if (isOpen && initialTab) {
@@ -61,17 +62,28 @@ export const BroadcastWonderPickerModal: React.FC<BroadcastWonderPickerModalProp
   useEffect(() => {
     if (typeof window !== "undefined") {
       setOriginUrl(window.location.origin);
+      const isPublicDomain = window.location.hostname !== "localhost" &&
+        window.location.hostname !== "127.0.0.1" &&
+        !/^\d+\.\d+\.\d+\.\d+$/.test(window.location.hostname);
+
+      setIsDomainMode(isPublicDomain);
+      if (isPublicDomain) {
+        setHostMode('domain');
+      } else {
+        setHostMode('lan');
+      }
+
       fetch("/api/network-ip")
         .then(res => res.json())
         .then(data => {
-          if (data?.ip && data.ip !== "localhost") {
+          if (data?.ip && data.ip !== "localhost" && !data.ip.startsWith("169.254.")) {
             setLanIp(data.ip);
           }
           if (data?.interfaces) {
             setAllIps(data.interfaces);
           }
         })
-        .catch(() => {});
+        .catch(() => { });
     }
   }, []);
 
@@ -80,7 +92,10 @@ export const BroadcastWonderPickerModal: React.FC<BroadcastWonderPickerModalProp
     const port = window.location.port ? `:${window.location.port}` : "";
     const protocol = window.location.protocol;
 
-    if (hostMode === 'lan' && lanIp) {
+    if (hostMode === 'domain' || (isDomainMode && hostMode !== 'custom' && hostMode !== 'lan' && hostMode !== 'localhost')) {
+      return window.location.origin;
+    }
+    if (hostMode === 'lan' && lanIp && !lanIp.startsWith("169.254.")) {
       return `${protocol}//${lanIp}${port}`;
     }
     if (hostMode === 'custom' && customHost.trim()) {
@@ -92,8 +107,8 @@ export const BroadcastWonderPickerModal: React.FC<BroadcastWonderPickerModalProp
 
   const effectiveOrigin = getEffectiveOrigin();
 
-  const fullShareUrl = effectiveOrigin 
-    ? `${effectiveOrigin}/projector?room=${encodeURIComponent(localRoomInput.trim() || roomCode)}` 
+  const fullShareUrl = effectiveOrigin
+    ? `${effectiveOrigin}/projector?room=${encodeURIComponent(localRoomInput.trim() || roomCode)}`
     : `/projector?room=${encodeURIComponent(localRoomInput.trim() || roomCode)}`;
 
   const localProjectorUrl = effectiveOrigin ? `${effectiveOrigin}/projector` : `/projector`;
@@ -115,7 +130,7 @@ export const BroadcastWonderPickerModal: React.FC<BroadcastWonderPickerModalProp
       }
     })
       .then((url) => setQrDataUrl(url))
-      .catch(() => {});
+      .catch(() => { });
   }, [fullShareUrl, isOpen]);
 
   if (!isOpen) return null;
@@ -137,15 +152,14 @@ export const BroadcastWonderPickerModal: React.FC<BroadcastWonderPickerModalProp
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-md animate-in fade-in duration-200">
       <div className="bg-[#0e0e0e] border border-neutral-800 rounded-3xl w-full max-w-3xl shadow-2xl overflow-hidden flex flex-col max-h-[92vh]">
-        
+
         {/* Header Bar */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-neutral-800/80 bg-neutral-900/50">
           <div className="flex items-center gap-3">
-            <div className={`p-2.5 rounded-2xl border ${
-              isBroadcasting 
-                ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/30 shadow-[0_0_20px_rgba(16,185,129,0.25)]" 
+            <div className={`p-2.5 rounded-2xl border ${isBroadcasting
+                ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/30 shadow-[0_0_20px_rgba(16,185,129,0.25)]"
                 : "bg-neutral-800 text-neutral-300 border-neutral-700"
-            }`}>
+              }`}>
               <Cast size={20} className={isBroadcasting ? "animate-pulse text-emerald-400" : ""} />
             </div>
             <div>
@@ -182,16 +196,15 @@ export const BroadcastWonderPickerModal: React.FC<BroadcastWonderPickerModalProp
         {/* Destination Option Tabs */}
         <div className="px-6 pt-4 pb-2 bg-neutral-950 border-b border-neutral-800/80">
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-            
+
             {/* Tab 1: Online Room */}
             <button
               type="button"
               onClick={() => setActiveTab('internet_room')}
-              className={`p-3 rounded-2xl border text-left transition-all flex flex-col justify-between ${
-                activeTab === 'internet_room'
+              className={`p-3 rounded-2xl border text-left transition-all flex flex-col justify-between ${activeTab === 'internet_room'
                   ? "bg-indigo-950/60 border-indigo-500/60 text-white shadow-lg ring-1 ring-indigo-500/30"
                   : "bg-neutral-900/60 border-neutral-800 text-neutral-400 hover:bg-neutral-850 hover:text-neutral-200"
-              }`}
+                }`}
             >
               <div className="flex items-center justify-between mb-1.5">
                 <Globe size={16} className={activeTab === 'internet_room' ? "text-indigo-400" : "text-neutral-500"} />
@@ -209,11 +222,10 @@ export const BroadcastWonderPickerModal: React.FC<BroadcastWonderPickerModalProp
             <button
               type="button"
               onClick={() => setActiveTab('local_display')}
-              className={`p-3 rounded-2xl border text-left transition-all flex flex-col justify-between ${
-                activeTab === 'local_display'
+              className={`p-3 rounded-2xl border text-left transition-all flex flex-col justify-between ${activeTab === 'local_display'
                   ? "bg-indigo-950/60 border-indigo-500/60 text-white shadow-lg ring-1 ring-indigo-500/30"
                   : "bg-neutral-900/60 border-neutral-800 text-neutral-400 hover:bg-neutral-850 hover:text-neutral-200"
-              }`}
+                }`}
             >
               <div className="flex items-center justify-between mb-1.5">
                 <Monitor size={16} className={activeTab === 'local_display' ? "text-indigo-400" : "text-neutral-500"} />
@@ -231,11 +243,10 @@ export const BroadcastWonderPickerModal: React.FC<BroadcastWonderPickerModalProp
             <button
               type="button"
               onClick={() => setActiveTab('obs_stream')}
-              className={`p-3 rounded-2xl border text-left transition-all flex flex-col justify-between ${
-                activeTab === 'obs_stream'
+              className={`p-3 rounded-2xl border text-left transition-all flex flex-col justify-between ${activeTab === 'obs_stream'
                   ? "bg-indigo-950/60 border-indigo-500/60 text-white shadow-lg ring-1 ring-indigo-500/30"
                   : "bg-neutral-900/60 border-neutral-800 text-neutral-400 hover:bg-neutral-850 hover:text-neutral-200"
-              }`}
+                }`}
             >
               <div className="flex items-center justify-between mb-1.5">
                 <Video size={16} className={activeTab === 'obs_stream' ? "text-indigo-400" : "text-neutral-500"} />
@@ -251,11 +262,10 @@ export const BroadcastWonderPickerModal: React.FC<BroadcastWonderPickerModalProp
             <button
               type="button"
               onClick={() => setActiveTab('lan_wifi')}
-              className={`p-3 rounded-2xl border text-left transition-all flex flex-col justify-between ${
-                activeTab === 'lan_wifi'
+              className={`p-3 rounded-2xl border text-left transition-all flex flex-col justify-between ${activeTab === 'lan_wifi'
                   ? "bg-indigo-950/60 border-indigo-500/60 text-white shadow-lg ring-1 ring-indigo-500/30"
                   : "bg-neutral-900/60 border-neutral-800 text-neutral-400 hover:bg-neutral-850 hover:text-neutral-200"
-              }`}
+                }`}
             >
               <div className="flex items-center justify-between mb-1.5">
                 <Wifi size={16} className={activeTab === 'lan_wifi' ? "text-indigo-400" : "text-neutral-500"} />
@@ -278,11 +288,10 @@ export const BroadcastWonderPickerModal: React.FC<BroadcastWonderPickerModalProp
           {activeTab === 'internet_room' && (
             <div className="space-y-5">
               {/* Broadcast ON/OFF Action Switch */}
-              <div className={`p-4 rounded-2xl border transition-all flex items-center justify-between gap-4 ${
-                isBroadcasting
+              <div className={`p-4 rounded-2xl border transition-all flex items-center justify-between gap-4 ${isBroadcasting
                   ? "bg-emerald-950/30 border-emerald-500/40 shadow-inner"
                   : "bg-neutral-900/50 border-neutral-800"
-              }`}>
+                }`}>
                 <div className="space-y-1">
                   <div className="flex items-center gap-2">
                     <Radio size={16} className={isBroadcasting ? "text-emerald-400 animate-pulse" : "text-neutral-500"} />
@@ -300,11 +309,10 @@ export const BroadcastWonderPickerModal: React.FC<BroadcastWonderPickerModalProp
                 <button
                   type="button"
                   onClick={() => onToggleBroadcast(!isBroadcasting)}
-                  className={`px-5 py-2.5 rounded-xl font-bold text-xs shadow-md transition-all active:scale-95 flex items-center gap-2 shrink-0 ${
-                    isBroadcasting
+                  className={`px-5 py-2.5 rounded-xl font-bold text-xs shadow-md transition-all active:scale-95 flex items-center gap-2 shrink-0 ${isBroadcasting
                       ? "bg-rose-600 hover:bg-rose-500 text-white shadow-rose-600/30"
                       : "bg-emerald-600 hover:bg-emerald-500 text-white shadow-emerald-600/30"
-                  }`}
+                    }`}
                 >
                   <Radio size={14} className={isBroadcasting ? "animate-pulse" : ""} />
                   <span>{isBroadcasting ? "Stop Broadcast" : "Go Live (Start)"}</span>
@@ -348,15 +356,33 @@ export const BroadcastWonderPickerModal: React.FC<BroadcastWonderPickerModalProp
                   </span>
                 </div>
 
-                <div className="grid grid-cols-3 gap-2">
+                <div className={`grid ${isDomainMode ? "grid-cols-4" : "grid-cols-3"} gap-2`}>
+                  {isDomainMode && (
+                    <button
+                      type="button"
+                      onClick={() => setHostMode('domain')}
+                      className={`py-2 px-2 rounded-xl text-xs font-bold transition-all flex flex-col items-center justify-center gap-0.5 border ${hostMode === 'domain'
+                          ? "bg-indigo-600 text-white border-indigo-400 shadow-md shadow-indigo-600/30 ring-1 ring-indigo-400/50"
+                          : "bg-neutral-900 text-neutral-400 border-neutral-800 hover:text-neutral-200"
+                        }`}
+                    >
+                      <span className="flex items-center gap-1">
+                        <Globe size={12} className={hostMode === 'domain' ? "text-white" : "text-indigo-400"} />
+                        <span>Domain</span>
+                      </span>
+                      <span className="text-[10px] font-mono opacity-80 truncate max-w-[90px]">
+                        {typeof window !== "undefined" ? window.location.hostname : "Domain"}
+                      </span>
+                    </button>
+                  )}
+
                   <button
                     type="button"
                     onClick={() => setHostMode('lan')}
-                    className={`py-2 px-2.5 rounded-xl text-xs font-bold transition-all flex flex-col items-center justify-center gap-0.5 border ${
-                      hostMode === 'lan'
+                    className={`py-2 px-2.5 rounded-xl text-xs font-bold transition-all flex flex-col items-center justify-center gap-0.5 border ${hostMode === 'lan'
                         ? "bg-indigo-600 text-white border-indigo-400 shadow-md shadow-indigo-600/30 ring-1 ring-indigo-400/50"
                         : "bg-neutral-900 text-neutral-400 border-neutral-800 hover:text-neutral-200"
-                    }`}
+                      }`}
                   >
                     <span className="flex items-center gap-1">
                       <Wifi size={12} className={hostMode === 'lan' ? "text-white" : "text-emerald-400"} />
@@ -370,11 +396,10 @@ export const BroadcastWonderPickerModal: React.FC<BroadcastWonderPickerModalProp
                   <button
                     type="button"
                     onClick={() => setHostMode('localhost')}
-                    className={`py-2 px-2.5 rounded-xl text-xs font-bold transition-all flex flex-col items-center justify-center gap-0.5 border ${
-                      hostMode === 'localhost'
+                    className={`py-2 px-2.5 rounded-xl text-xs font-bold transition-all flex flex-col items-center justify-center gap-0.5 border ${hostMode === 'localhost'
                         ? "bg-indigo-600 text-white border-indigo-400 shadow-md shadow-indigo-600/30 ring-1 ring-indigo-400/50"
                         : "bg-neutral-900 text-neutral-400 border-neutral-800 hover:text-neutral-200"
-                    }`}
+                      }`}
                   >
                     <span>Localhost</span>
                     <span className="text-[10px] font-mono opacity-80">localhost:3000</span>
@@ -383,14 +408,13 @@ export const BroadcastWonderPickerModal: React.FC<BroadcastWonderPickerModalProp
                   <button
                     type="button"
                     onClick={() => setHostMode('custom')}
-                    className={`py-2 px-2.5 rounded-xl text-xs font-bold transition-all flex flex-col items-center justify-center gap-0.5 border ${
-                      hostMode === 'custom'
+                    className={`py-2 px-2.5 rounded-xl text-xs font-bold transition-all flex flex-col items-center justify-center gap-0.5 border ${hostMode === 'custom'
                         ? "bg-indigo-600 text-white border-indigo-400 shadow-md shadow-indigo-600/30 ring-1 ring-indigo-400/50"
                         : "bg-neutral-900 text-neutral-400 border-neutral-800 hover:text-neutral-200"
-                    }`}
+                      }`}
                   >
-                    <span>Custom IP</span>
-                    <span className="text-[10px] font-mono opacity-80">e.g. 172.20.10.2</span>
+                    <span>Custom</span>
+                    <span className="text-[10px] font-mono opacity-80">Enter Host</span>
                   </button>
                 </div>
 
@@ -427,11 +451,10 @@ export const BroadcastWonderPickerModal: React.FC<BroadcastWonderPickerModalProp
                     <button
                       type="button"
                       onClick={() => handleCopyLink(fullShareUrl, 'internet_room')}
-                      className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all shrink-0 flex items-center gap-1.5 ${
-                        copiedUrl === 'internet_room'
+                      className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all shrink-0 flex items-center gap-1.5 ${copiedUrl === 'internet_room'
                           ? "bg-emerald-600 text-white shadow-sm"
                           : "bg-indigo-600 hover:bg-indigo-500 text-white shadow-md shadow-indigo-600/30"
-                      }`}
+                        }`}
                     >
                       {copiedUrl === 'internet_room' ? <Check size={13} /> : <Copy size={13} />}
                       <span>{copiedUrl === 'internet_room' ? "Copied!" : "Copy Link"}</span>
@@ -522,11 +545,10 @@ export const BroadcastWonderPickerModal: React.FC<BroadcastWonderPickerModalProp
                   </div>
 
                   <div className="flex items-center gap-2">
-                    <span className={`px-2.5 py-1 rounded-full text-xs font-bold border flex items-center gap-1.5 ${
-                      isDisplayConnected
+                    <span className={`px-2.5 py-1 rounded-full text-xs font-bold border flex items-center gap-1.5 ${isDisplayConnected
                         ? "bg-emerald-950 text-emerald-300 border-emerald-500/40"
                         : "bg-neutral-800 text-neutral-400 border-neutral-700"
-                    }`}>
+                      }`}>
                       <span className={`w-2 h-2 rounded-full ${isDisplayConnected ? "bg-emerald-400 animate-pulse" : "bg-neutral-500"}`}></span>
                       <span>{isDisplayConnected ? "Display Active" : "Not Launched"}</span>
                     </span>
@@ -600,11 +622,10 @@ export const BroadcastWonderPickerModal: React.FC<BroadcastWonderPickerModalProp
                   <button
                     type="button"
                     onClick={() => handleCopyLink(fullShareUrl, 'obs_url')}
-                    className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all shrink-0 flex items-center gap-1.5 ${
-                      copiedUrl === 'obs_url'
+                    className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all shrink-0 flex items-center gap-1.5 ${copiedUrl === 'obs_url'
                         ? "bg-emerald-600 text-white"
                         : "bg-indigo-600 hover:bg-indigo-500 text-white"
-                    }`}
+                      }`}
                   >
                     {copiedUrl === 'obs_url' ? <Check size={13} /> : <Copy size={13} />}
                     <span>{copiedUrl === 'obs_url' ? "Copied!" : "Copy Browser Source URL"}</span>
@@ -658,11 +679,10 @@ export const BroadcastWonderPickerModal: React.FC<BroadcastWonderPickerModalProp
                     <button
                       type="button"
                       onClick={() => handleCopyLink(fullShareUrl, 'wifi_url')}
-                      className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all shrink-0 flex items-center gap-1.5 ${
-                        copiedUrl === 'wifi_url'
+                      className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all shrink-0 flex items-center gap-1.5 ${copiedUrl === 'wifi_url'
                           ? "bg-emerald-600 text-white"
                           : "bg-indigo-600 hover:bg-indigo-500 text-white"
-                      }`}
+                        }`}
                     >
                       {copiedUrl === 'wifi_url' ? <Check size={13} /> : <Copy size={13} />}
                       <span>{copiedUrl === 'wifi_url' ? "Copied!" : "Copy Link"}</span>
@@ -686,11 +706,10 @@ export const BroadcastWonderPickerModal: React.FC<BroadcastWonderPickerModalProp
                     <button
                       type="button"
                       onClick={() => handleCopyLink(remotePhoneUrl, 'remote_wifi_url')}
-                      className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all shrink-0 flex items-center gap-1.5 ${
-                        copiedUrl === 'remote_wifi_url'
+                      className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all shrink-0 flex items-center gap-1.5 ${copiedUrl === 'remote_wifi_url'
                           ? "bg-purple-600 text-white"
                           : "bg-purple-700 hover:bg-purple-600 text-white"
-                      }`}
+                        }`}
                     >
                       {copiedUrl === 'remote_wifi_url' ? <Check size={13} /> : <Copy size={13} />}
                       <span>{copiedUrl === 'remote_wifi_url' ? "Copied!" : "Copy Remote URL"}</span>

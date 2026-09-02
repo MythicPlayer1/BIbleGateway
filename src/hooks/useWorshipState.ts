@@ -2,11 +2,11 @@
 
 import { useState, useEffect, useRef, useMemo } from "react";
 import { books } from "@/lib/books";
-import { 
-  defaultSongs, parseLyricsToSlides, parseCustomSlideText, 
+import {
+  defaultSongs, parseLyricsToSlides, parseCustomSlideText,
   DEFAULT_TICKER_CONFIG, QUICK_TICKER_PRESETS, BROADCAST_CHANNEL_NAME,
-  type Song, type ScheduleItem, type ScheduleItemType, 
-  type SongSlide, type TickerConfig, type TickerTheme, 
+  type Song, type ScheduleItem, type ScheduleItemType,
+  type SongSlide, type TickerConfig, type TickerTheme,
   type TickerSpeed, type TickerFontSize, type MediaSlideItem,
   type GlobalBackgroundConfig, DEFAULT_BACKGROUND_CONFIG, type BackgroundImageItem,
   type TextAnimationConfig, DEFAULT_TEXT_ANIMATION_CONFIG, type TextAnimationEffect, type TextAnimationSpeed,
@@ -15,13 +15,13 @@ import {
 } from "@/lib/lyrics";
 import { romanToDevanagariExactMatch, nepaliToRoman } from "@/lib/transliterate";
 import { searchSongsFast } from "@/lib/songSearch/searchEngine";
-import { 
+import {
   saveScheduleMedia, getScheduleMedia, deleteMultipleScheduleMedia, deleteScheduleMedia
 } from "@/lib/mediaStorage";
 import type { NewItemDataState } from "@/components/AddItemModal";
 import { useWorshipStore, initialSongsLibrary } from "@/store/useWorshipStore";
 import { HostBroadcaster, type ConnectedClientInfo } from "@/lib/broadcastSync";
-import { 
+import {
   generatePairingToken, generateUniqueId, ROLE_PERMISSIONS,
   type RemoteOperatorSession, type RemoteCommandPayload, type CanonicalPresentationState,
   type ActivityLogItem, type PairingRequestMessage, type PairingResponseMessage,
@@ -143,6 +143,7 @@ export function useWorshipState() {
   const [isHttpFallbackActive, setIsHttpFallbackActive] = useState<boolean>(false);
   const [isHostScreenSharing, setIsHostScreenSharing] = useState<boolean>(false);
   const hostScreenStreamRef = useRef<MediaStream | null>(null);
+  const buildCanonicalStateRef = useRef<() => CanonicalPresentationState>(() => ({} as any));
 
   // Post-mount hydration: read localStorage after client mount to avoid SSR mismatch
   useEffect(() => {
@@ -153,14 +154,14 @@ export function useWorshipState() {
     try {
       const savedDisplay = localStorage.getItem('worship_display_config');
       if (savedDisplay) setDisplayConfig({ ...DEFAULT_DISPLAY_CONFIG, ...JSON.parse(savedDisplay) });
-    } catch {}
+    } catch { }
   }, []);
 
   const handleToggleBroadcast = (enabled: boolean) => {
     setIsBroadcasting(enabled);
     try {
       localStorage.setItem('worship_is_broadcasting', String(enabled));
-    } catch {}
+    } catch { }
     if (enabled) {
       showToast(`Online Broadcast Started: Room "${broadcastRoomCode}"`);
     } else {
@@ -174,7 +175,7 @@ export function useWorshipState() {
     setBroadcastRoomCode(clean);
     try {
       localStorage.setItem('worship_broadcast_room', clean);
-    } catch {}
+    } catch { }
     showToast(`Room code set to "${clean}"`);
   };
 
@@ -208,18 +209,22 @@ export function useWorshipState() {
       onOperatorPairingRequest: (req, conn) => {
         const cleanReqToken = (req.token || "").trim().toUpperCase();
         const cleanPairingToken = (pairingToken || "").trim().toUpperCase();
-        const isAutoApproved = !cleanReqToken || 
-          cleanReqToken === cleanPairingToken || 
-          cleanReqToken === "ABC123" || 
-          cleanPairingToken === "ABC123" || 
+        const isAutoApproved = !cleanReqToken ||
+          cleanReqToken === cleanPairingToken ||
+          cleanReqToken === "ABC123" ||
+          cleanPairingToken === "ABC123" ||
           cleanReqToken.length >= 4;
 
         if (isAutoApproved) {
+          // 1st connected device becomes Operator; subsequent devices join as Viewer (Safe Read-Only)
+          const hasExistingOperator = host.hasActiveOperator(req.operatorId);
+          const assignedRole: OperatorRole = hasExistingOperator ? 'viewer' : 'operator';
+
           const session: RemoteOperatorSession = {
             operatorId: req.operatorId,
-            name: req.name || "Mobile Operator",
+            name: req.name || (assignedRole === 'operator' ? "Primary Operator" : "Stage Viewer"),
             deviceInfo: req.deviceInfo || "Mobile Browser",
-            role: req.requestedRole || "operator",
+            role: assignedRole,
             pairedAt: Date.now(),
             lastActiveAt: Date.now(),
             peerId: conn.peer,
@@ -238,10 +243,10 @@ export function useWorshipState() {
             churchName: "Proclaim Sanctuary"
           } as PairingResponseMessage);
 
-          // Push immediate state snapshot
+          // Push immediate fresh state snapshot
           conn.send({
             type: "CANONICAL_STATE_UPDATE",
-            state: buildCanonicalState()
+            state: buildCanonicalStateRef.current()
           });
 
           setActivityLogs(prev => [
@@ -354,7 +359,7 @@ export function useWorshipState() {
         pairingToken,
         state: snap
       })
-    }).catch(() => {});
+    }).catch(() => { });
 
     return () => {
       host.destroy();
@@ -368,19 +373,19 @@ export function useWorshipState() {
     if (channelRef.current) {
       try {
         channelRef.current.postMessage(payload);
-      } catch {}
+      } catch { }
     }
     if (hostBroadcasterRef.current) {
       try {
         hostBroadcasterRef.current.broadcast(payload);
-      } catch {}
+      } catch { }
     }
   };
 
   // Broadcast Channel Initialization
   useEffect(() => {
     channelRef.current = new BroadcastChannel(BROADCAST_CHANNEL_NAME);
-    
+
     channelRef.current.onmessage = (event) => {
       const data = event.data;
       if (data.type === 'HEARTBEAT') {
@@ -457,7 +462,7 @@ export function useWorshipState() {
           return;
         }
       }
-    } catch (e) {}
+    } catch (e) { }
     setCustomSongs(initialSongsLibrary);
   }, []);
 
@@ -474,14 +479,14 @@ export function useWorshipState() {
         if (savedTicker) {
           try {
             setTickerConfig(JSON.parse(savedTicker));
-          } catch (e) {}
+          } catch (e) { }
         }
 
         const savedTextAnimStr = localStorage.getItem('worship_text_anim_config');
         if (savedTextAnimStr) {
           try {
             setTextAnimConfig(JSON.parse(savedTextAnimStr));
-          } catch (e) {}
+          } catch (e) { }
         }
 
         const savedBgConfigStr = localStorage.getItem('worship_global_bg_config');
@@ -517,7 +522,7 @@ export function useWorshipState() {
               }
             }
             setGlobalBgConfig(parsedBgConfig);
-          } catch (e) {}
+          } catch (e) { }
         }
 
         const savedSched = localStorage.getItem('worship_schedule_items');
@@ -591,7 +596,7 @@ export function useWorshipState() {
             );
 
             setScheduleItems(hydratedSched);
-            
+
             const savedItemId = localStorage.getItem('worship_selected_item_id');
             if (savedItemId && hydratedSched.some((i: any) => i.id === savedItemId)) {
               setSelectedItemId(savedItemId);
@@ -605,7 +610,7 @@ export function useWorshipState() {
             if (savedSlideIdx !== null) {
               setSelectedSlideIndex(parseInt(savedSlideIdx, 10) || 0);
             }
-          } catch (e) {}
+          } catch (e) { }
         }
 
         const savedPlansStr = localStorage.getItem('worship_saved_service_plans');
@@ -615,9 +620,9 @@ export function useWorshipState() {
             if (Array.isArray(parsedPlans)) {
               setSavedPlans(parsedPlans);
             }
-          } catch (e) {}
+          } catch (e) { }
         }
-      } catch (e) {}
+      } catch (e) { }
     };
 
     initStorage();
@@ -828,14 +833,14 @@ export function useWorshipState() {
         setSelectedSlideIndex(newSlideIdx);
         localStorage.setItem('worship_selected_slide_index', newSlideIdx.toString());
       }
-    } catch (e) {}
+    } catch (e) { }
   };
 
   const selectSlideIndex = (idx: number) => {
     setSelectedSlideIndex(idx);
     try {
       localStorage.setItem('worship_selected_slide_index', idx.toString());
-    } catch (e) {}
+    } catch (e) { }
   };
 
   // Drag and drop reordering inside slide cards
@@ -870,7 +875,7 @@ export function useWorshipState() {
   const handleRemoveSlide = (idx: number, e?: React.MouseEvent) => {
     if (e) e.stopPropagation();
     if (!activeScheduleItem) return;
-    
+
     if (activeSlides.length <= 1) {
       showToast("Cannot remove the only slide. Delete the item instead.");
       return;
@@ -878,23 +883,23 @@ export function useWorshipState() {
 
     const reordered = [...activeSlides];
     reordered.splice(idx, 1);
-    
+
     const updatedSchedule = scheduleItems.map(item => {
       if (item.id === activeScheduleItem.id) {
         const updatedItem = { ...item, customSlides: reordered };
         if (item.type === 'media' && item.mediaItems) {
-           const newMediaItems = [...item.mediaItems];
-           if (idx < newMediaItems.length) {
-              const removedMedia = newMediaItems.splice(idx, 1)[0];
-              deleteScheduleMedia(removedMedia.id).catch(() => {});
-           }
-           updatedItem.mediaItems = newMediaItems;
-           if (newMediaItems.length > 0 && idx === 0) {
-              updatedItem.mediaUrl = newMediaItems[0].url;
-              updatedItem.mediaBuffer = newMediaItems[0].buffer;
-              updatedItem.mediaType = newMediaItems[0].type;
-              updatedItem.mediaMime = newMediaItems[0].mime;
-           }
+          const newMediaItems = [...item.mediaItems];
+          if (idx < newMediaItems.length) {
+            const removedMedia = newMediaItems.splice(idx, 1)[0];
+            deleteScheduleMedia(removedMedia.id).catch(() => { });
+          }
+          updatedItem.mediaItems = newMediaItems;
+          if (newMediaItems.length > 0 && idx === 0) {
+            updatedItem.mediaUrl = newMediaItems[0].url;
+            updatedItem.mediaBuffer = newMediaItems[0].buffer;
+            updatedItem.mediaType = newMediaItems[0].type;
+            updatedItem.mediaMime = newMediaItems[0].mime;
+          }
         }
         return updatedItem;
       }
@@ -1000,7 +1005,7 @@ export function useWorshipState() {
               isTextHidden: isTextHiddenRef.current,
               ticker: tickerConfigRef.current
             }));
-          } catch (e) {}
+          } catch (e) { }
         }
       }
     } else if (appMode === 'schedule') {
@@ -1027,7 +1032,7 @@ export function useWorshipState() {
             isTextHidden: isTextHiddenRef.current,
             ticker: tickerConfigRef.current
           }));
-        } catch (e) {}
+        } catch (e) { }
       } else if (activeScheduleItem?.type === 'media') {
         const currentMedia: any = activeScheduleItem.mediaItems?.[selectedSlideIndex] || activeScheduleItem;
         const currentSlide = activeSlides[selectedSlideIndex];
@@ -1063,7 +1068,7 @@ export function useWorshipState() {
               isTextHidden: isTextHiddenRef.current,
               ticker: tickerConfigRef.current
             }));
-          } catch (e) {}
+          } catch (e) { }
         };
 
         if (buf) {
@@ -1073,7 +1078,7 @@ export function useWorshipState() {
             if (rec && rec.buffer) {
               broadcastMediaPayload(rec.buffer);
             }
-          }).catch(() => {});
+          }).catch(() => { });
         }
       } else if (activeScheduleItem?.type === 'presentation') {
         const currentSlide = activeSlides[selectedSlideIndex] || activeSlides[0];
@@ -1099,7 +1104,7 @@ export function useWorshipState() {
             isTextHidden: isTextHiddenRef.current,
             ticker: tickerConfigRef.current
           }));
-        } catch (e) {}
+        } catch (e) { }
       } else if (activeScheduleItem?.type === 'web_embed') {
         currentMediaSlideRef.current = null;
         broadcastToProjector({ type: 'CLEAR_MEDIA_SLIDE' });
@@ -1126,7 +1131,7 @@ export function useWorshipState() {
             isTextHidden: isTextHiddenRef.current,
             ticker: tickerConfigRef.current
           }));
-        } catch (e) {}
+        } catch (e) { }
       } else if (activeSlides.length > 0) {
         currentMediaSlideRef.current = null;
         broadcastToProjector({ type: 'CLEAR_MEDIA_SLIDE' });
@@ -1166,7 +1171,7 @@ export function useWorshipState() {
               isTextHidden: isTextHiddenRef.current,
               ticker: tickerConfigRef.current
             }));
-          } catch (e) {}
+          } catch (e) { }
         }
       }
     } else if (appMode === 'lyrics') {
@@ -1196,7 +1201,7 @@ export function useWorshipState() {
               isTextHidden: isTextHiddenRef.current,
               ticker: tickerConfigRef.current
             }));
-          } catch (e) {}
+          } catch (e) { }
         }
       }
     }
@@ -1236,7 +1241,7 @@ export function useWorshipState() {
     }
     try {
       localStorage.setItem('worship_display_config', JSON.stringify(config));
-    } catch {}
+    } catch { }
   };
 
   // Navigation handlers
@@ -1256,8 +1261,8 @@ export function useWorshipState() {
           const prevItem = scheduleItems[currentIndex - 1];
           setAppMode('schedule');
           setSelectedItemId(prevItem.id);
-          try { localStorage.setItem('worship_app_mode', 'schedule'); } catch {}
-          try { localStorage.setItem('worship_selected_item_id', prevItem.id); } catch {}
+          try { localStorage.setItem('worship_app_mode', 'schedule'); } catch { }
+          try { localStorage.setItem('worship_selected_item_id', prevItem.id); } catch { }
           const prevSlides = getSlidesForScheduleItem(prevItem);
           selectSlideIndex(prevSlides.length > 0 ? prevSlides.length - 1 : 0);
         }
@@ -1283,8 +1288,8 @@ export function useWorshipState() {
           setAppMode('schedule');
           setSelectedItemId(nextItem.id);
           selectSlideIndex(0);
-          try { localStorage.setItem('worship_app_mode', 'schedule'); } catch {}
-          try { localStorage.setItem('worship_selected_item_id', nextItem.id); } catch {}
+          try { localStorage.setItem('worship_app_mode', 'schedule'); } catch { }
+          try { localStorage.setItem('worship_selected_item_id', nextItem.id); } catch { }
         }
       }
     }
@@ -1328,7 +1333,7 @@ export function useWorshipState() {
           isTextHidden: nextVal
         }));
       }
-    } catch (e) {}
+    } catch (e) { }
   };
 
   const handleOpenProjector = () => {
@@ -1369,70 +1374,70 @@ export function useWorshipState() {
     try {
       localStorage.setItem('worship_app_mode', mode);
       localStorage.setItem('worship_selected_slide_index', '0');
-    } catch (e) {}
+    } catch (e) { }
   };
 
   // Ticker Controls
   const handleUpdateTickerText = (text: string) => {
     const updated = { ...tickerConfig, text };
     setTickerConfig(updated);
-    try { localStorage.setItem('worship_ticker_config', JSON.stringify(updated)); } catch (e) {}
+    try { localStorage.setItem('worship_ticker_config', JSON.stringify(updated)); } catch (e) { }
     broadcastToProjector({ type: 'SET_TICKER', config: updated });
   };
 
   const handleUpdateTickerBadge = (badgeLabel: string) => {
     const updated = { ...tickerConfig, badgeLabel };
     setTickerConfig(updated);
-    try { localStorage.setItem('worship_ticker_config', JSON.stringify(updated)); } catch (e) {}
+    try { localStorage.setItem('worship_ticker_config', JSON.stringify(updated)); } catch (e) { }
     broadcastToProjector({ type: 'SET_TICKER', config: updated });
   };
 
   const handleToggleTickerBadge = () => {
     const updated = { ...tickerConfig, showBadge: !tickerConfig.showBadge };
     setTickerConfig(updated);
-    try { localStorage.setItem('worship_ticker_config', JSON.stringify(updated)); } catch (e) {}
+    try { localStorage.setItem('worship_ticker_config', JSON.stringify(updated)); } catch (e) { }
     broadcastToProjector({ type: 'SET_TICKER', config: updated });
   };
 
   const handleUpdateTickerTheme = (theme: TickerTheme) => {
     const updated = { ...tickerConfig, theme };
     setTickerConfig(updated);
-    try { localStorage.setItem('worship_ticker_config', JSON.stringify(updated)); } catch (e) {}
+    try { localStorage.setItem('worship_ticker_config', JSON.stringify(updated)); } catch (e) { }
     broadcastToProjector({ type: 'SET_TICKER', config: updated });
   };
 
   const handleUpdateTickerPosition = (position: 'bottom' | 'top') => {
     const updated = { ...tickerConfig, position };
     setTickerConfig(updated);
-    try { localStorage.setItem('worship_ticker_config', JSON.stringify(updated)); } catch (e) {}
+    try { localStorage.setItem('worship_ticker_config', JSON.stringify(updated)); } catch (e) { }
     broadcastToProjector({ type: 'SET_TICKER', config: updated });
   };
 
   const handleUpdateTickerSpeed = (speed: TickerSpeed) => {
     const updated = { ...tickerConfig, speed };
     setTickerConfig(updated);
-    try { localStorage.setItem('worship_ticker_config', JSON.stringify(updated)); } catch (e) {}
+    try { localStorage.setItem('worship_ticker_config', JSON.stringify(updated)); } catch (e) { }
     broadcastToProjector({ type: 'SET_TICKER', config: updated });
   };
 
   const handleUpdateTickerFontSize = (fontSize: TickerFontSize) => {
     const updated = { ...tickerConfig, fontSize };
     setTickerConfig(updated);
-    try { localStorage.setItem('worship_ticker_config', JSON.stringify(updated)); } catch (e) {}
+    try { localStorage.setItem('worship_ticker_config', JSON.stringify(updated)); } catch (e) { }
     broadcastToProjector({ type: 'SET_TICKER', config: updated });
   };
 
   const handleApplyTickerPreset = (preset: typeof QUICK_TICKER_PRESETS[0]) => {
     const updated = { ...tickerConfig, text: preset.text, badgeLabel: preset.badge };
     setTickerConfig(updated);
-    try { localStorage.setItem('worship_ticker_config', JSON.stringify(updated)); } catch (e) {}
+    try { localStorage.setItem('worship_ticker_config', JSON.stringify(updated)); } catch (e) { }
     broadcastToProjector({ type: 'SET_TICKER', config: updated });
   };
 
   const handleToggleTicker = () => {
     const updated = { ...tickerConfig, enabled: !tickerConfig.enabled };
     setTickerConfig(updated);
-    try { localStorage.setItem('worship_ticker_config', JSON.stringify(updated)); } catch (e) {}
+    try { localStorage.setItem('worship_ticker_config', JSON.stringify(updated)); } catch (e) { }
     broadcastToProjector({ type: 'SET_TICKER', config: updated });
   };
 
@@ -1544,7 +1549,7 @@ export function useWorshipState() {
 
   const toggleSelectScheduleItem = (id: string, e: React.MouseEvent) => {
     e.stopPropagation();
-    setSelectedScheduleIds(prev => 
+    setSelectedScheduleIds(prev =>
       prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]
     );
   };
@@ -1605,7 +1610,7 @@ export function useWorshipState() {
               verseText = vS && vS.text ? `${vP.text}\n───\n${vS.text}` : vP.text;
             }
           }
-        } catch (e) {}
+        } catch (e) { }
       }
 
       newItem = {
@@ -1631,7 +1636,7 @@ export function useWorshipState() {
             reader.onload = (e) => resolve(e.target?.result as string);
             reader.readAsDataURL(newItemData.qrCodeFile!);
           });
-        } catch (e) {}
+        } catch (e) { }
       }
 
       const generatedSlides = parseCustomSlideText(
@@ -1672,11 +1677,11 @@ export function useWorshipState() {
         customSlides: generatedSlides
       };
     } else if (addItemType === 'media' && ((newItemData.mediaFiles && newItemData.mediaFiles.length > 0) || newItemData.mediaFile)) {
-      const filesToProcess = (newItemData.mediaFiles && newItemData.mediaFiles.length > 0) 
-        ? newItemData.mediaFiles 
+      const filesToProcess = (newItemData.mediaFiles && newItemData.mediaFiles.length > 0)
+        ? newItemData.mediaFiles
         : [newItemData.mediaFile!];
       const newId = `item-${Date.now()}`;
-      
+
       const processedMediaItems: MediaSlideItem[] = [];
       const generatedSlides: SongSlide[] = [];
 
@@ -1716,8 +1721,8 @@ export function useWorshipState() {
       newItem = {
         id: newId,
         title: newItemData.title || (isMultiple ? `Photo Gallery (${processedMediaItems.length} Images)` : firstMedia.name),
-        subtitle: isMultiple 
-          ? `${processedMediaItems.length} Slide Media Deck` 
+        subtitle: isMultiple
+          ? `${processedMediaItems.length} Slide Media Deck`
           : (firstMedia.type === 'video' ? 'Video Presentation Slide' : 'Image Presentation Slide'),
         type: 'media',
         mediaType: firstMedia.type,
@@ -1925,7 +1930,7 @@ export function useWorshipState() {
     setSavedPlans(updated);
     try {
       localStorage.setItem('worship_saved_service_plans', JSON.stringify(updated));
-    } catch (e) {}
+    } catch (e) { }
     showToast(`Saved service plan "${name}"`);
   };
 
@@ -1957,7 +1962,7 @@ export function useWorshipState() {
     setSavedPlans(updated);
     try {
       localStorage.setItem('worship_saved_service_plans', JSON.stringify(updated));
-    } catch (e) {}
+    } catch (e) { }
     showToast(`Duplicated "${plan.name}"`);
   };
 
@@ -1974,7 +1979,7 @@ export function useWorshipState() {
         setSavedPlans(updated);
         try {
           localStorage.setItem('worship_saved_service_plans', JSON.stringify(updated));
-        } catch (e) {}
+        } catch (e) { }
         showToast(`Deleted "${plan.name}"`);
       }
     });
@@ -2031,7 +2036,7 @@ export function useWorshipState() {
         setSavedPlans(updated);
         try {
           localStorage.setItem('worship_saved_service_plans', JSON.stringify(updated));
-        } catch (e) {}
+        } catch (e) { }
         showToast(`Imported ${importedPlans.length} service plan(s)`);
       } catch (err) {
         console.error("Failed to parse JSON file", err);
@@ -2063,7 +2068,7 @@ export function useWorshipState() {
         try {
           const userCustomOnly = updated.filter(s => s.isCustom || s.id.startsWith('custom-song-'));
           localStorage.setItem('worship_custom_songs', JSON.stringify(userCustomOnly));
-        } catch (err) {}
+        } catch (err) { }
 
         if (activeLibrarySongId === songId) {
           const remaining = allSongs.filter(s => s.id !== songId);
@@ -2118,7 +2123,7 @@ export function useWorshipState() {
     try {
       const userCustomOnly = updatedSongs.filter(s => s.isCustom || s.id.startsWith('custom-song-'));
       localStorage.setItem('worship_custom_songs', JSON.stringify(userCustomOnly));
-    } catch (e) {}
+    } catch (e) { }
 
     if (addToSchedule && targetSong) {
       const songItem: ScheduleItem = {
@@ -2148,7 +2153,7 @@ export function useWorshipState() {
         video: newConfig.video ? { ...newConfig.video, buffer: undefined } : undefined
       };
       localStorage.setItem('worship_global_bg_config', JSON.stringify(sanitized));
-    } catch (e) {}
+    } catch (e) { }
     broadcastToProjector({
       type: 'SET_BG_CONFIG',
       config: newConfig
@@ -2185,7 +2190,7 @@ export function useWorshipState() {
   };
 
   const handleRemoveSlideshowImage = (id: string) => {
-    deleteScheduleMedia(id).catch(() => {});
+    deleteScheduleMedia(id).catch(() => { });
     const updatedImages = globalBgConfig.slideshow.images.filter(img => img.id !== id);
     const newConfig: GlobalBackgroundConfig = {
       ...globalBgConfig,
@@ -2292,26 +2297,26 @@ export function useWorshipState() {
 
   // Live Screen Preview text calculations
   const isScheduleMedia = appMode === 'schedule' && (
-    activeScheduleItem?.type === 'media' || 
+    activeScheduleItem?.type === 'media' ||
     activeScheduleItem?.type === 'presentation' ||
     Boolean(activeSlides[selectedSlideIndex]?.mediaUrl)
   );
-  const currentActiveMedia: any = isScheduleMedia 
+  const currentActiveMedia: any = isScheduleMedia
     ? (
-        activeSlides[selectedSlideIndex]?.mediaUrl
-          ? {
-              url: activeSlides[selectedSlideIndex].mediaUrl,
-              type: activeSlides[selectedSlideIndex].mediaType || 'image',
-              name: activeSlides[selectedSlideIndex].lines?.[0] || activeScheduleItem?.title || 'Slide'
-            }
-          : (activeScheduleItem?.mediaItems?.[selectedSlideIndex] || activeScheduleItem)
-      )
+      activeSlides[selectedSlideIndex]?.mediaUrl
+        ? {
+          url: activeSlides[selectedSlideIndex].mediaUrl,
+          type: activeSlides[selectedSlideIndex].mediaType || 'image',
+          name: activeSlides[selectedSlideIndex].lines?.[0] || activeScheduleItem?.title || 'Slide'
+        }
+        : (activeScheduleItem?.mediaItems?.[selectedSlideIndex] || activeScheduleItem)
+    )
     : null;
   const currentPreviewText = appMode === 'bible'
     ? verses.find(v => v.verseNumber === selectedVerse)?.text || ''
-    : activeSlides[selectedSlideIndex]?.text || '';
+    : (activeSlides[selectedSlideIndex]?.text || activeSlides[selectedSlideIndex]?.lines?.join('\n') || '');
 
-  const currentActiveMediaUrl = appMode === 'schedule' 
+  const currentActiveMediaUrl = appMode === 'schedule'
     ? (currentActiveMedia?.url || currentActiveMedia?.mediaUrl || activeScheduleItem?.mediaUrl || '')
     : '';
   const currentActiveMediaType = appMode === 'schedule'
@@ -2339,7 +2344,7 @@ export function useWorshipState() {
     setTextAnimConfig(newConfig);
     try {
       localStorage.setItem('worship_text_anim_config', JSON.stringify(newConfig));
-    } catch (e) {}
+    } catch (e) { }
     broadcastToProjector({
       type: 'SET_TEXT_ANIMATION',
       config: newConfig
@@ -2353,8 +2358,8 @@ export function useWorshipState() {
     const activeItem = scheduleItems.find(item => item.id === effectiveActiveItemId) || (scheduleItems.length > 0 ? scheduleItems[0] : null);
 
     // 2. Resolve full slides for current item
-    const itemSlides = activeItem 
-      ? getSlidesForScheduleItem(activeItem) 
+    const itemSlides = activeItem
+      ? getSlidesForScheduleItem(activeItem)
       : (activeSlides.length > 0 ? activeSlides : []);
     const safeSlideIdx = Math.min(Math.max(0, selectedSlideIndex), Math.max(0, (itemSlides.length || 1) - 1));
     const activeSlide = itemSlides[safeSlideIdx] || activeSlides[selectedSlideIndex];
@@ -2432,6 +2437,8 @@ export function useWorshipState() {
     };
   };
 
+  buildCanonicalStateRef.current = buildCanonicalState;
+
   // Host Screen Sharing with System Audio (WebRTC & BroadcastChannel)
   const startHostScreenShare = async () => {
     if (typeof navigator === 'undefined' || !navigator.mediaDevices?.getDisplayMedia) {
@@ -2440,7 +2447,7 @@ export function useWorshipState() {
     }
     try {
       showToast("🖥️ Choose screen, window, or tab to cast with audio...");
-      const stream = await navigator.mediaDevices.getDisplayMedia({
+      const stream = await (navigator.mediaDevices as any).getDisplayMedia({
         video: {
           displaySurface: "monitor",
           frameRate: { ideal: 30, max: 60 }
@@ -2449,7 +2456,10 @@ export function useWorshipState() {
           echoCancellation: false,
           noiseSuppression: false,
           autoGainControl: false
-        }
+        },
+        surfaceSwitching: "exclude",
+        selfBrowserSurface: "exclude",
+        systemAudio: "include"
       });
 
       hostScreenStreamRef.current = stream;
@@ -2479,7 +2489,7 @@ export function useWorshipState() {
   const stopHostScreenShare = () => {
     if (hostScreenStreamRef.current) {
       hostScreenStreamRef.current.getTracks().forEach(t => {
-        try { t.stop(); } catch {}
+        try { t.stop(); } catch { }
       });
       hostScreenStreamRef.current = null;
     }
@@ -2510,16 +2520,16 @@ export function useWorshipState() {
 
     const perms = ROLE_PERMISSIONS[session.role] || ROLE_PERMISSIONS.viewer;
 
-    if (session.role === 'viewer' && cmd.type !== 'PING') {
+    if (session.role === 'viewer' && cmd.type !== 'PING' && cmd.type !== 'REQUEST_ROLE_UPGRADE') {
       return { success: false, reason: "VIEWER_CANNOT_CONTROL" };
     }
 
     if (activeControllerId && activeControllerId !== session.operatorId) {
       if (cmd.type !== 'REQUEST_CONTROL_LOCK' && cmd.type !== 'PING') {
         const lockHolder = connectedOperators.find(o => o.operatorId === activeControllerId)?.name || 'another operator';
-        return { 
-          success: false, 
-          reason: `Control locked by ${lockHolder}` 
+        return {
+          success: false,
+          reason: `Control locked by ${lockHolder}`
         };
       }
     }
@@ -2558,8 +2568,8 @@ export function useWorshipState() {
           setAppMode('schedule');
           setSelectedItemId(itemId);
           selectSlideIndex(slideIdx);
-          try { localStorage.setItem('worship_app_mode', 'schedule'); } catch {}
-          try { localStorage.setItem('worship_selected_item_id', itemId); } catch {}
+          try { localStorage.setItem('worship_app_mode', 'schedule'); } catch { }
+          try { localStorage.setItem('worship_selected_item_id', itemId); } catch { }
           const itm = scheduleItems.find(i => i.id === itemId);
           logAction("Go Live", `${itm?.title || 'Item'} (Slide ${slideIdx + 1})`);
         }
@@ -2572,8 +2582,8 @@ export function useWorshipState() {
           setAppMode('schedule');
           setSelectedItemId(itemId);
           selectSlideIndex(0);
-          try { localStorage.setItem('worship_app_mode', 'schedule'); } catch {}
-          try { localStorage.setItem('worship_selected_item_id', itemId); } catch {}
+          try { localStorage.setItem('worship_app_mode', 'schedule'); } catch { }
+          try { localStorage.setItem('worship_selected_item_id', itemId); } catch { }
           logAction("Select Item", itemId);
         }
         break;
@@ -2581,7 +2591,7 @@ export function useWorshipState() {
       case 'PRESENTATION_TEXT_MUTE': {
         if (!perms.canBlackout) return { success: false, reason: "PERMISSION_DENIED" };
         setIsTextHidden(true);
-        try { localStorage.setItem('worship_text_hidden', 'true'); } catch {}
+        try { localStorage.setItem('worship_text_hidden', 'true'); } catch { }
         broadcastToProjector({ type: 'TOGGLE_HIDE', hidden: true });
         logAction("Blackout Enabled", "Screen text muted", "control");
         break;
@@ -2589,7 +2599,7 @@ export function useWorshipState() {
       case 'PRESENTATION_TEXT_SHOW': {
         if (!perms.canBlackout) return { success: false, reason: "PERMISSION_DENIED" };
         setIsTextHidden(false);
-        try { localStorage.setItem('worship_text_hidden', 'false'); } catch {}
+        try { localStorage.setItem('worship_text_hidden', 'false'); } catch { }
         broadcastToProjector({ type: 'TOGGLE_HIDE', hidden: false });
         logAction("Blackout Disabled", "Screen text restored", "control");
         break;
@@ -2630,7 +2640,7 @@ export function useWorshipState() {
         const enabled = cmd.params?.enabled ?? !tickerConfig.enabled;
         const updated = { ...tickerConfig, enabled };
         setTickerConfig(updated);
-        try { localStorage.setItem('worship_ticker_config', JSON.stringify(updated)); } catch (e) {}
+        try { localStorage.setItem('worship_ticker_config', JSON.stringify(updated)); } catch (e) { }
         broadcastToProjector({ type: 'SET_TICKER', config: updated });
         logAction("Ticker Toggled", enabled ? "Enabled" : "Disabled", "control");
         break;
@@ -2640,7 +2650,7 @@ export function useWorshipState() {
         const text = cmd.params?.text ?? "";
         const updated = { ...tickerConfig, text };
         setTickerConfig(updated);
-        try { localStorage.setItem('worship_ticker_config', JSON.stringify(updated)); } catch (e) {}
+        try { localStorage.setItem('worship_ticker_config', JSON.stringify(updated)); } catch (e) { }
         broadcastToProjector({ type: 'SET_TICKER', config: updated });
         logAction("Ticker Text Updated", text.slice(0, 30), "control");
         break;
@@ -2657,6 +2667,13 @@ export function useWorshipState() {
           logAction("Control Lock Released", session.name, "security");
           showToast(`🔓 Control lock released by ${session.name}`);
         }
+        break;
+      }
+      case 'REQUEST_ROLE_UPGRADE': {
+        const targetRole: OperatorRole = (cmd.params?.role as OperatorRole) || 'operator';
+        handleUpdateOperatorRole(session.operatorId, targetRole);
+        logAction("Role Upgraded", `${session.name} granted ${targetRole} role`, "security");
+        showToast(`📱 Granted ${targetRole} control to ${session.name}`);
         break;
       }
       case 'PING': {
@@ -2690,7 +2707,7 @@ export function useWorshipState() {
         pairingToken,
         state: snap
       })
-    }).catch(() => {});
+    }).catch(() => { });
   }, [
     isBroadcasting,
     isRemoteControlEnabled,
@@ -2761,7 +2778,7 @@ export function useWorshipState() {
             });
           }
         }
-      } catch {}
+      } catch { }
     };
 
     const interval = setInterval(pollServerSync, 1500);
@@ -2777,7 +2794,7 @@ export function useWorshipState() {
     setPairingToken(newToken);
     try {
       localStorage.setItem('worship_remote_pairing_token', newToken);
-    } catch {}
+    } catch { }
     showToast(`New Pairing Token generated: ${newToken}`);
   };
 
@@ -2811,9 +2828,9 @@ export function useWorshipState() {
         } as PairingResponseMessage);
         pendingConn.send({
           type: 'CANONICAL_STATE_UPDATE',
-          state: buildCanonicalState()
+          state: buildCanonicalStateRef.current()
         });
-      } catch {}
+      } catch { }
     }
 
     setPendingOperatorRequests(prev => prev.filter(p => p.req.operatorId !== request.operatorId));
@@ -2842,7 +2859,7 @@ export function useWorshipState() {
         operatorId: request.operatorId,
         role
       })
-    }).catch(() => {});
+    }).catch(() => { });
 
     showToast(`Approved ${request.name} as ${role}`);
   };
@@ -2861,7 +2878,7 @@ export function useWorshipState() {
           roomCode: broadcastRoomCode,
           reason: 'REQUEST_DENIED_BY_HOST'
         } as PairingResponseMessage);
-      } catch {}
+      } catch { }
     }
 
     // Sync to local HTTP LAN endpoint
@@ -2873,7 +2890,7 @@ export function useWorshipState() {
         roomCode: broadcastRoomCode,
         operatorId
       })
-    }).catch(() => {});
+    }).catch(() => { });
 
     setPendingOperatorRequests(prev => prev.filter(p => p.req.operatorId !== operatorId));
     showToast("Operator request denied");
@@ -2895,7 +2912,7 @@ export function useWorshipState() {
         operatorId,
         role: newRole
       })
-    }).catch(() => {});
+    }).catch(() => { });
 
     showToast(`Updated operator role to ${newRole}`);
   };
@@ -2918,7 +2935,7 @@ export function useWorshipState() {
         roomCode: broadcastRoomCode,
         operatorId
       })
-    }).catch(() => {});
+    }).catch(() => { });
 
     showToast("Operator revoked");
   };
@@ -2938,7 +2955,7 @@ export function useWorshipState() {
         action: 'REVOKE_ALL',
         roomCode: broadcastRoomCode
       })
-    }).catch(() => {});
+    }).catch(() => { });
 
     showToast("All remote devices revoked");
   };

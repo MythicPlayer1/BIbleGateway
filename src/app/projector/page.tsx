@@ -87,7 +87,7 @@ export default function Projector() {
   useEffect(() => {
     if (screenShareVideoRef.current && screenShareStream) {
       screenShareVideoRef.current.srcObject = screenShareStream;
-      screenShareVideoRef.current.play().catch(() => {});
+      screenShareVideoRef.current.play().catch(() => { });
     }
   }, [screenShareStream]);
 
@@ -218,7 +218,7 @@ export default function Projector() {
                 ...img,
                 url: URL.createObjectURL(blob)
               };
-            } catch {}
+            } catch { }
           }
           return img;
         })
@@ -231,7 +231,7 @@ export default function Projector() {
           ...clone.video,
           url: URL.createObjectURL(blob)
         };
-      } catch {}
+      } catch { }
     }
     return clone;
   };
@@ -719,24 +719,21 @@ export default function Projector() {
       {/* 0. Remote Online Room Connection Badge */}
       {roomCode && (
         <div
-          className={`fixed top-4 right-4 z-50 transition-all duration-300 pointer-events-auto select-none ${
-            onlineSyncStatus === 'connected' ? 'opacity-80 hover:opacity-100' : 'opacity-100'
-          }`}
+          className={`fixed top-4 right-4 z-50 transition-all duration-300 pointer-events-auto select-none ${onlineSyncStatus === 'connected' ? 'opacity-80 hover:opacity-100' : 'opacity-100'
+            }`}
         >
-          <div className={`px-3.5 py-1.5 rounded-full border backdrop-blur-md text-xs font-bold flex items-center gap-2 shadow-2xl ${
-            onlineSyncStatus === 'connected'
+          <div className={`px-3.5 py-1.5 rounded-full border backdrop-blur-md text-xs font-bold flex items-center gap-2 shadow-2xl ${onlineSyncStatus === 'connected'
               ? 'bg-emerald-950/85 border-emerald-500/50 text-emerald-300'
               : onlineSyncStatus === 'connecting'
                 ? 'bg-amber-950/85 border-amber-500/50 text-amber-300'
                 : 'bg-rose-950/85 border-rose-500/50 text-rose-300'
-          }`}>
-            <span className={`w-2 h-2 rounded-full ${
-              onlineSyncStatus === 'connected'
+            }`}>
+            <span className={`w-2 h-2 rounded-full ${onlineSyncStatus === 'connected'
                 ? 'bg-emerald-400 animate-pulse'
                 : onlineSyncStatus === 'connecting'
                   ? 'bg-amber-400 animate-ping'
                   : 'bg-rose-500'
-            }`}></span>
+              }`}></span>
             <span>
               {onlineSyncStatus === 'connected'
                 ? `Online Room: ${roomCode} • Live Synced`
@@ -1041,10 +1038,10 @@ export default function Projector() {
             transition={{ duration: getTextAnimationDuration(textAnim.speed), ease: [0.22, 1, 0.36, 1] }}
             style={{ willChange: 'transform, opacity', transform: 'translateZ(0)' }}
             className={`w-full max-w-[94vw] mx-auto flex flex-col justify-center relative z-10 ${(verse.textAlign || displayConfig.textAlign) === 'left'
-                ? 'items-start text-left'
-                : (verse.textAlign || displayConfig.textAlign) === 'right'
-                  ? 'items-end text-right'
-                  : 'items-center text-center'
+              ? 'items-start text-left'
+              : (verse.textAlign || displayConfig.textAlign) === 'right'
+                ? 'items-end text-right'
+                : 'items-center text-center'
               }`}
           >
             <div

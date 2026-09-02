@@ -34,6 +34,7 @@ export type RemoteCommandType =
   | 'TICKER_SET_TEXT'
   | 'REQUEST_CONTROL_LOCK'
   | 'RELEASE_CONTROL_LOCK'
+  | 'REQUEST_ROLE_UPGRADE'
   | 'PING';
 
 export interface RemoteCommandPayload {

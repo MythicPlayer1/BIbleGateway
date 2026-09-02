@@ -230,6 +230,18 @@ export class HostBroadcaster {
 
       const msg = data as BroadcastMessage;
 
+      // Handle Real-Time PING/PONG Heartbeat for live round-trip latency
+      if (msg.type === "PING") {
+        try {
+          conn.send({
+            type: "PONG",
+            timestamp: msg.timestamp,
+            hostTime: Date.now()
+          });
+        } catch {}
+        return;
+      }
+
       // Handle Remote Operator Pairing Request
       if (msg.type === "PAIRING_REQUEST") {
         const req = msg as unknown as PairingRequestMessage;
@@ -431,11 +443,26 @@ export class HostBroadcaster {
     this.onClientsChange?.(clients);
   }
 
-  private notifyOperators() {
+  public getConnectedOperators(): RemoteOperatorSession[] {
     const list: RemoteOperatorSession[] = [];
     this.operatorSessions.forEach((entry) => {
       list.push(entry.session);
     });
+    return list;
+  }
+
+  public hasActiveOperator(excludeOperatorId?: string): boolean {
+    for (const [opId, entry] of this.operatorSessions.entries()) {
+      if (excludeOperatorId && opId === excludeOperatorId) continue;
+      if (entry.session.isApproved && entry.session.role !== 'viewer') {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  private notifyOperators() {
+    const list = this.getConnectedOperators();
     this.onOperatorsChange?.(list);
   }
 
@@ -739,9 +766,11 @@ export class RemoteOperatorClient {
   private onStatusChange: (status: 'connecting' | 'connected' | 'disconnected' | 'pending' | 'paired' | 'revoked') => void;
   private onControlLockChange?: (hasLock: boolean, activeControllerId: string | null) => void;
   private onErrorMessage?: (msg: string) => void;
+  private onPing?: (pingMs: number) => void;
   private pendingCommandAcks: Map<string, { resolve: (ack: RemoteCommandAck) => void; reject: (err: any) => void; timer: any }> = new Map();
   private isDestroyed = false;
   private reconnectTimer: any = null;
+  private pingInterval: any = null;
   private connectAttempts = 0;
   private beforeUnloadHandler: (() => void) | null = null;
 
@@ -756,6 +785,7 @@ export class RemoteOperatorClient {
       onStatusChange: (status: 'connecting' | 'connected' | 'disconnected' | 'pending' | 'paired' | 'revoked') => void;
       onControlLockChange?: (hasLock: boolean, activeControllerId: string | null) => void;
       onErrorMessage?: (msg: string) => void;
+      onPing?: (pingMs: number) => void;
     }
   ) {
     this.roomCode = roomCode;
@@ -767,6 +797,7 @@ export class RemoteOperatorClient {
     this.onStatusChange = callbacks.onStatusChange;
     this.onControlLockChange = callbacks.onControlLockChange;
     this.onErrorMessage = callbacks.onErrorMessage;
+    this.onPing = callbacks.onPing;
     this.init();
 
     if (typeof window !== "undefined") {
@@ -861,6 +892,7 @@ export class RemoteOperatorClient {
       conn.on("open", () => {
         this.connectAttempts = 0;
         this.onStatusChange("connected");
+        this.startPingHeartbeat();
         // Dispatch Pairing Request
         const deviceInfo = typeof navigator !== "undefined" 
           ? `${navigator.platform || "Mobile"} (${navigator.userAgent.slice(0, 40)})`
@@ -906,6 +938,14 @@ export class RemoteOperatorClient {
           return;
         }
 
+        // Handle PONG response from host for live accurate round-trip ping
+        if (data.type === "PONG") {
+          const sentTime = typeof data.timestamp === "number" ? data.timestamp : Date.now();
+          const rtt = Math.max(1, Math.min(9999, Date.now() - sentTime));
+          this.onPing?.(rtt);
+          return;
+        }
+
         // Command ACK
         if (data.type === "COMMAND_ACK") {
           const ack = data as RemoteCommandAck;
@@ -920,11 +960,13 @@ export class RemoteOperatorClient {
       });
 
       conn.on("close", () => {
+        this.stopPingHeartbeat();
         this.onStatusChange("disconnected");
         this.scheduleReconnect();
       });
 
       conn.on("error", (err: any) => {
+        this.stopPingHeartbeat();
         this.onErrorMessage?.(err?.message || "Channel error");
         this.onStatusChange("disconnected");
         this.scheduleReconnect();
@@ -1025,7 +1067,7 @@ export class RemoteOperatorClient {
       };
     }
     try {
-      const stream = await navigator.mediaDevices.getDisplayMedia({
+      const stream = await (navigator.mediaDevices as any).getDisplayMedia({
         video: {
           displaySurface: "monitor",
           frameRate: { ideal: 30, max: 60 }
@@ -1034,7 +1076,10 @@ export class RemoteOperatorClient {
           echoCancellation: false,
           noiseSuppression: false,
           autoGainControl: false
-        }
+        },
+        surfaceSwitching: "exclude",
+        selfBrowserSurface: "exclude",
+        systemAudio: "include"
       });
 
       this.localScreenStream = stream;
@@ -1082,8 +1127,35 @@ export class RemoteOperatorClient {
     });
   }
 
+  private startPingHeartbeat() {
+    this.stopPingHeartbeat();
+    this.sendPing();
+    this.pingInterval = setInterval(() => {
+      this.sendPing();
+    }, 1500);
+  }
+
+  private sendPing() {
+    if (this.conn && this.conn.open) {
+      try {
+        this.conn.send({
+          type: "PING",
+          timestamp: Date.now()
+        });
+      } catch {}
+    }
+  }
+
+  private stopPingHeartbeat() {
+    if (this.pingInterval) {
+      clearInterval(this.pingInterval);
+      this.pingInterval = null;
+    }
+  }
+
   public destroy() {
     this.isDestroyed = true;
+    this.stopPingHeartbeat();
     if (this.reconnectTimer) {
       clearTimeout(this.reconnectTimer);
       this.reconnectTimer = null;
