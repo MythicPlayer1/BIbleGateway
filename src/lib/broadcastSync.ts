@@ -91,6 +91,7 @@ export class HostBroadcaster {
   private retryAttempts = 0;
   private maxRetries = 5;
   private beforeUnloadHandler: (() => void) | null = null;
+  private signalingHeartbeatTimer: any = null;
 
   public get isReady(): boolean {
     return !this.isDestroyed && !!this.peer && !this.peer.disconnected && !this.peer.destroyed;
@@ -157,6 +158,7 @@ export class HostBroadcaster {
 
       this.peer.on("open", () => {
         this.retryAttempts = 0;
+        this.startSignalingHeartbeat();
         this.onReady?.();
         this.onStatusChange?.('ready');
       });
@@ -538,8 +540,32 @@ export class HostBroadcaster {
     return this.connections.size;
   }
 
+  private startSignalingHeartbeat() {
+    this.stopSignalingHeartbeat();
+    this.signalingHeartbeatTimer = setInterval(() => {
+      if (this.isDestroyed || !this.peer) return;
+      if (this.peer.disconnected && !this.peer.destroyed) {
+        try {
+          this.peer.reconnect();
+        } catch {}
+      } else if (this.peer.socket && (this.peer.socket as any)._ws?.readyState === WebSocket.OPEN) {
+        try {
+          (this.peer.socket as any)._ws.send(JSON.stringify({ type: "HEARTBEAT" }));
+        } catch {}
+      }
+    }, 10000);
+  }
+
+  private stopSignalingHeartbeat() {
+    if (this.signalingHeartbeatTimer) {
+      clearInterval(this.signalingHeartbeatTimer);
+      this.signalingHeartbeatTimer = null;
+    }
+  }
+
   public destroy() {
     this.isDestroyed = true;
+    this.stopSignalingHeartbeat();
     if (this.retryTimer) {
       clearTimeout(this.retryTimer);
       this.retryTimer = null;
@@ -581,6 +607,7 @@ export class ClientReceiver {
   private reconnectTimer: any = null;
   private connectAttempts = 0;
   private beforeUnloadHandler: (() => void) | null = null;
+  private signalingHeartbeatTimer: any = null;
 
   constructor(
     roomCode: string,
@@ -631,6 +658,7 @@ export class ClientReceiver {
 
       this.peer.on("open", () => {
         if (!this.isDestroyed) {
+          this.startSignalingHeartbeat();
           this.connectToHost();
         }
       });
@@ -719,10 +747,34 @@ export class ClientReceiver {
     }
   }
 
+  private startSignalingHeartbeat() {
+    this.stopSignalingHeartbeat();
+    this.signalingHeartbeatTimer = setInterval(() => {
+      if (this.isDestroyed || !this.peer) return;
+      if (this.peer.disconnected && !this.peer.destroyed) {
+        try {
+          this.peer.reconnect();
+        } catch {}
+      } else if (this.peer.socket && (this.peer.socket as any)._ws?.readyState === WebSocket.OPEN) {
+        try {
+          (this.peer.socket as any)._ws.send(JSON.stringify({ type: "HEARTBEAT" }));
+        } catch {}
+      }
+    }, 10000);
+  }
+
+  private stopSignalingHeartbeat() {
+    if (this.signalingHeartbeatTimer) {
+      clearInterval(this.signalingHeartbeatTimer);
+      this.signalingHeartbeatTimer = null;
+    }
+  }
+
   private scheduleReconnect() {
     if (this.isDestroyed || this.reconnectTimer) return;
     this.connectAttempts++;
-    const delay = Math.min(5000, 1500 + this.connectAttempts * 800);
+    this.onStatusChange("connecting");
+    const delay = Math.min(3000, 1000 + this.connectAttempts * 500);
     this.reconnectTimer = setTimeout(() => {
       this.reconnectTimer = null;
       if (!this.isDestroyed) {
@@ -745,6 +797,7 @@ export class ClientReceiver {
 
   public destroy() {
     this.isDestroyed = true;
+    this.stopSignalingHeartbeat();
     if (this.reconnectTimer) {
       clearTimeout(this.reconnectTimer);
       this.reconnectTimer = null;
@@ -794,6 +847,7 @@ export class RemoteOperatorClient {
   private pingInterval: any = null;
   private connectAttempts = 0;
   private beforeUnloadHandler: (() => void) | null = null;
+  private signalingHeartbeatTimer: any = null;
 
   constructor(
     roomCode: string,
@@ -858,6 +912,7 @@ export class RemoteOperatorClient {
 
       this.peer.on("open", () => {
         if (!this.isDestroyed) {
+          this.startSignalingHeartbeat();
           this.connectToHost();
         }
       });
@@ -1171,8 +1226,32 @@ export class RemoteOperatorClient {
     }
   }
 
+  private startSignalingHeartbeat() {
+    this.stopSignalingHeartbeat();
+    this.signalingHeartbeatTimer = setInterval(() => {
+      if (this.isDestroyed || !this.peer) return;
+      if (this.peer.disconnected && !this.peer.destroyed) {
+        try {
+          this.peer.reconnect();
+        } catch {}
+      } else if (this.peer.socket && (this.peer.socket as any)._ws?.readyState === WebSocket.OPEN) {
+        try {
+          (this.peer.socket as any)._ws.send(JSON.stringify({ type: "HEARTBEAT" }));
+        } catch {}
+      }
+    }, 10000);
+  }
+
+  private stopSignalingHeartbeat() {
+    if (this.signalingHeartbeatTimer) {
+      clearInterval(this.signalingHeartbeatTimer);
+      this.signalingHeartbeatTimer = null;
+    }
+  }
+
   public destroy() {
     this.isDestroyed = true;
+    this.stopSignalingHeartbeat();
     this.stopPingHeartbeat();
     if (this.reconnectTimer) {
       clearTimeout(this.reconnectTimer);
