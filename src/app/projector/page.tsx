@@ -185,6 +185,8 @@ export default function Projector() {
   // Remote Online Room Sync State (when accessed with ?room=XYZ)
   const [roomCode, setRoomCode] = useState<string | null>(null);
   const [onlineSyncStatus, setOnlineSyncStatus] = useState<'connecting' | 'connected' | 'disconnected'>('connecting');
+  const [isLocallySynced, setIsLocallySynced] = useState<boolean>(false);
+  const [hasDismissedPill, setHasDismissedPill] = useState<boolean>(false);
 
   useEffect(() => {
     if (typeof window !== 'undefined') {
@@ -238,6 +240,7 @@ export default function Projector() {
 
   const processProjectorMessage = (data: any) => {
     if (!data || typeof data !== 'object') return;
+    setIsLocallySynced(true);
 
     if (data.type === 'SET_VERSE') {
       if (mediaSlideUrlRef.current) {
@@ -717,29 +720,40 @@ export default function Projector() {
       className="w-screen h-screen min-h-screen bg-[#030303] text-white flex flex-col items-center justify-center p-0 relative overflow-hidden select-none font-sans"
     >
       {/* 0. Remote Online Room Connection Badge */}
-      {roomCode && (
+      {roomCode && !hasDismissedPill && (
         <div
-          className={`fixed top-4 right-4 z-50 transition-all duration-300 pointer-events-auto select-none ${onlineSyncStatus === 'connected' ? 'opacity-80 hover:opacity-100' : 'opacity-100'
-            }`}
+          onClick={() => setHasDismissedPill(true)}
+          className={`fixed top-4 right-4 z-50 transition-all duration-500 pointer-events-auto select-none cursor-pointer ${
+            isLocallySynced || onlineSyncStatus === 'connected'
+              ? 'opacity-80 hover:opacity-100'
+              : 'opacity-100'
+          }`}
+          title="Click to dismiss badge"
         >
-          <div className={`px-3.5 py-1.5 rounded-full border backdrop-blur-md text-xs font-bold flex items-center gap-2 shadow-2xl ${onlineSyncStatus === 'connected'
-              ? 'bg-emerald-950/85 border-emerald-500/50 text-emerald-300'
-              : onlineSyncStatus === 'connecting'
+          <div
+            className={`px-3.5 py-1.5 rounded-full border backdrop-blur-md text-xs font-bold flex items-center gap-2 shadow-2xl transition-colors ${
+              isLocallySynced || onlineSyncStatus === 'connected'
+                ? 'bg-emerald-950/85 border-emerald-500/50 text-emerald-300'
+                : onlineSyncStatus === 'connecting'
                 ? 'bg-amber-950/85 border-amber-500/50 text-amber-300'
                 : 'bg-rose-950/85 border-rose-500/50 text-rose-300'
-            }`}>
-            <span className={`w-2 h-2 rounded-full ${onlineSyncStatus === 'connected'
-                ? 'bg-emerald-400 animate-pulse'
-                : onlineSyncStatus === 'connecting'
+            }`}
+          >
+            <span
+              className={`w-2 h-2 rounded-full ${
+                isLocallySynced || onlineSyncStatus === 'connected'
+                  ? 'bg-emerald-400 animate-pulse'
+                  : onlineSyncStatus === 'connecting'
                   ? 'bg-amber-400 animate-ping'
                   : 'bg-rose-500'
-              }`}></span>
+              }`}
+            ></span>
             <span>
-              {onlineSyncStatus === 'connected'
-                ? `Online Room: ${roomCode} • Live Synced`
+              {isLocallySynced || onlineSyncStatus === 'connected'
+                ? `Room: ${roomCode} • Live Synced`
                 : onlineSyncStatus === 'connecting'
-                  ? `Connecting to room: ${roomCode}...`
-                  : `Disconnected (Reconnecting...)`}
+                ? `Connecting to room: ${roomCode}...`
+                : `Disconnected (Reconnecting...)`}
             </span>
           </div>
         </div>

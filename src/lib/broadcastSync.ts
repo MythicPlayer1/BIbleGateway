@@ -56,8 +56,9 @@ export function formatRoomPeerId(roomCode: string): string {
   const clean = roomCode
     .trim()
     .toLowerCase()
-    .replace(/[^a-z0-9_-]/g, "-")
-    .replace(/-+/g, "-");
+    .replace(/[^a-z0-9]/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^-|-$/g, "");
   return `${BROADCAST_PEER_PREFIX}${clean || "default"}`;
 }
 

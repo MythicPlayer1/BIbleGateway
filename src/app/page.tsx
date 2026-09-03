@@ -30,6 +30,11 @@ export default function Home() {
     state.setIsBroadcastModalOpen(true);
   };
 
+  const totalActiveConnections = Math.max(
+    state.connectedClients.length,
+    state.connectedOperators.length
+  ) + (state.isDisplayConnected && !state.connectedClients.some(c => !c.isOperator) ? 1 : 0);
+
   return (
     <div className="min-h-screen bg-neutral-950 text-neutral-100 font-sans selection:bg-indigo-500 selection:text-white flex flex-col">
       {/* Top Navbar */}
@@ -150,7 +155,7 @@ export default function Home() {
           displayConfig={state.displayConfig}
           onOpenDisplaySettingsModal={() => state.setIsDisplayModalOpen(true)}
           isBroadcasting={state.isBroadcasting}
-          connectedClientsCount={state.connectedClients.length}
+          connectedClientsCount={totalActiveConnections}
           onOpenBroadcastModal={() => handleOpenWonderPickerWithTab('internet_room')}
           localBgUrl={state.localBgUrl}
           localBgType={state.localBgType}
@@ -187,7 +192,7 @@ export default function Home() {
       {/* Draggable Circular Floating Broadcast Action Button (FAB) */}
       <FloatingBroadcastWidget
         isBroadcasting={state.isBroadcasting}
-        connectedClientsCount={state.connectedClients.length}
+        connectedClientsCount={totalActiveConnections}
         isDisplayConnected={state.isDisplayConnected}
         onOpenWonderPicker={handleOpenWonderPickerWithTab}
         onOpenProjector={state.handleOpenProjector}
