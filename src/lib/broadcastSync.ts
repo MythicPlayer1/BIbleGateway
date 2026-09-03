@@ -10,6 +10,33 @@ import { generateUniqueId } from "@/lib/remoteControl";
 
 export const BROADCAST_PEER_PREFIX = "worship-stream-";
 
+export const DEFAULT_ICE_SERVERS: RTCIceServer[] = [
+  { urls: "stun:stun.l.google.com:19302" },
+  { urls: "stun:stun1.l.google.com:19302" },
+  { urls: "stun:stun2.l.google.com:19302" },
+  { urls: "stun:stun3.l.google.com:19302" },
+  { urls: "stun:stun4.l.google.com:19302" },
+  { urls: "stun:global.stun.twilio.com:3478" },
+  { urls: "stun:stun.cloudflare.com:3478" },
+  { urls: "stun:stun.services.mozilla.com" },
+  // OpenRelay Public TURN Relay (Essential for Vercel, 4G/5G mobile & symmetric NAT traversal)
+  {
+    urls: "turn:openrelay.metered.ca:80",
+    username: "openrelayproject",
+    credential: "openrelayproject"
+  },
+  {
+    urls: "turn:openrelay.metered.ca:443",
+    username: "openrelayproject",
+    credential: "openrelayproject"
+  },
+  {
+    urls: "turn:openrelay.metered.ca:443?transport=tcp",
+    username: "openrelayproject",
+    credential: "openrelayproject"
+  }
+];
+
 export interface ConnectedClientInfo {
   peerId: string;
   connectedAt: number;
@@ -124,10 +151,7 @@ export class HostBroadcaster {
       this.peer = new Peer(hostPeerId, {
         debug: 0,
         config: {
-          iceServers: [
-            { urls: "stun:stun.l.google.com:19302" },
-            { urls: "stun:global.stun.twilio.com:3478" }
-          ]
+          iceServers: DEFAULT_ICE_SERVERS
         }
       });
 
@@ -601,10 +625,7 @@ export class ClientReceiver {
       this.peer = new Peer({
         debug: 0,
         config: {
-          iceServers: [
-            { urls: "stun:stun.l.google.com:19302" },
-            { urls: "stun:global.stun.twilio.com:3478" }
-          ]
+          iceServers: DEFAULT_ICE_SERVERS
         }
       });
 
@@ -831,10 +852,7 @@ export class RemoteOperatorClient {
       this.peer = new Peer({
         debug: 0,
         config: {
-          iceServers: [
-            { urls: "stun:stun.l.google.com:19302" },
-            { urls: "stun:global.stun.twilio.com:3478" }
-          ]
+          iceServers: DEFAULT_ICE_SERVERS
         }
       });
 
