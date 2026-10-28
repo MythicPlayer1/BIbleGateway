@@ -99,7 +99,13 @@ export const TickerStudioModal: React.FC<TickerStudioModalProps> = ({
                     {tickerConfig.badgeLabel || 'NOTICE'}
                   </span>
                 )}
-                <div className="overflow-hidden whitespace-nowrap flex-1">
+                <div 
+                  className="overflow-hidden whitespace-nowrap flex-1 relative"
+                  style={{
+                    maskImage: 'linear-gradient(to right, transparent, black 3%, black 97%, transparent)',
+                    WebkitMaskImage: 'linear-gradient(to right, transparent, black 3%, black 97%, transparent)'
+                  }}
+                >
                   <div 
                     className={`inline-block animate-marquee font-bold tracking-wide ${
                       tickerConfig.theme === 'emerald' ? 'text-emerald-300' :

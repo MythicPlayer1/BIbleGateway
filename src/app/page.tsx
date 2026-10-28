@@ -20,10 +20,12 @@ import { DisplaySettingsModal } from "@/components/DisplaySettingsModal";
 import { BroadcastWonderPickerModal, type BroadcastTabOption } from "@/components/BroadcastWonderPickerModal";
 import { FloatingBroadcastWidget } from "@/components/FloatingBroadcastWidget";
 import { RemoteOperatorModal } from "@/components/RemoteOperatorModal";
+import { SplashScreen } from "@/components/SplashScreen";
 
 export default function Home() {
   const state = useWorshipState();
   const [broadcastModalTab, setBroadcastModalTab] = React.useState<BroadcastTabOption>('internet_room');
+  const [isSplashOpen, setIsSplashOpen] = React.useState<boolean | undefined>(undefined);
 
   const handleOpenWonderPickerWithTab = (tab: BroadcastTabOption = 'internet_room') => {
     setBroadcastModalTab(tab);
@@ -53,6 +55,7 @@ export default function Home() {
         onOpenProjector={state.handleOpenProjector}
         isHostScreenSharing={state.isHostScreenSharing}
         onToggleScreenShare={state.toggleHostScreenShare}
+        onOpenSplash={() => setIsSplashOpen(true)}
       />
 
       {/* Main Workspace Layout */}
@@ -326,6 +329,7 @@ export default function Home() {
         onClose={() => state.setIsDisplayModalOpen(false)}
         displayConfig={state.displayConfig}
         onUpdateDisplayConfig={state.handleUpdateDisplayConfig}
+        onPreviewSplash={() => setIsSplashOpen(true)}
       />
 
       <ConfirmModal
@@ -334,6 +338,12 @@ export default function Home() {
       />
 
       <Toast message={state.toastMessage} />
+
+      {/* First-Time / Startup Cinematic Splash Screen */}
+      <SplashScreen 
+        isOpen={isSplashOpen} 
+        onClose={() => setIsSplashOpen(false)} 
+      />
     </div>
   );
 }

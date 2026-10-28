@@ -236,19 +236,25 @@ export const ScheduleManager: React.FC<ScheduleManagerProps> = ({
                     onClick={() => onSelectSlideIndex(sIdx)}
                     whileHover={{ scale: 1.015 }}
                     whileTap={{ scale: 0.985 }}
-                    className={`group p-3 rounded-xl border cursor-grab active:cursor-grabbing flex flex-col justify-between text-left relative transition-all select-none ${
+                    className={`group p-3 rounded-xl border cursor-grab active:cursor-grabbing flex flex-col justify-between text-left relative transition-all select-none overflow-hidden ${
                       isDragging
                         ? 'border-indigo-400 ring-2 ring-indigo-400/80 shadow-2xl z-20 scale-[1.02] bg-indigo-950/80'
                         : isActive
-                          ? 'bg-indigo-900/60 border-indigo-500 text-white ring-2 ring-indigo-500/40 shadow-md'
+                          ? 'bg-indigo-900/60 border-indigo-500 text-white ring-2 ring-indigo-500/50 shadow-lg shadow-indigo-950/50'
                           : 'bg-neutral-900/80 border-neutral-800 text-neutral-300 hover:border-neutral-700 hover:bg-neutral-900'
                     }`}
                   >
+                    {/* Active Live Slide Top Shimmer */}
+                    {isActive && (
+                      <div className="absolute top-0 left-0 right-0 h-[2px] bg-gradient-to-r from-transparent via-emerald-400 to-transparent animate-pulse" />
+                    )}
+
                     <div className="flex items-center justify-between gap-1 mb-1.5">
-                      <span className={`text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full inline-block w-fit ${
-                        isActive ? 'bg-indigo-600 text-white' : 'bg-neutral-800 text-neutral-400'
+                      <span className={`text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full inline-flex items-center gap-1.5 w-fit ${
+                        isActive ? 'bg-indigo-600 text-white shadow-sm' : 'bg-neutral-800 text-neutral-400'
                       }`}>
-                        {slide.section}
+                        {isActive && <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping" />}
+                        <span>{slide.section}</span>
                       </span>
                       <div className="flex items-center gap-1.5 opacity-50 group-hover:opacity-100 transition-opacity">
                         <span className="text-[10px] font-mono text-neutral-500">#{sIdx + 1}</span>

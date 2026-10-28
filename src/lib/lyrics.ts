@@ -99,7 +99,7 @@ export interface TickerConfig {
   fontSize: TickerFontSize;
 }
 
-export type TextAnimationEffect = 'fade' | 'slide-up' | 'slide-down' | 'zoom-in' | 'flip' | 'blur' | 'pop';
+export type TextAnimationEffect = 'fade' | 'slide-up' | 'slide-down' | 'zoom-in' | 'flip' | 'blur' | 'pop' | 'kinetic';
 export type TextAnimationSpeed = 'fast' | 'normal' | 'slow';
 
 export interface TextAnimationConfig {
@@ -123,6 +123,12 @@ export function getTextAnimationDuration(speed: TextAnimationSpeed = 'normal'): 
 
 export function getTextAnimationVariants(effect: TextAnimationEffect = 'slide-up') {
   switch (effect) {
+    case 'kinetic':
+      return {
+        initial: { opacity: 0, y: 20, scale: 0.98 },
+        animate: { opacity: 1, y: 0, scale: 1 },
+        exit: { opacity: 0, y: -20, scale: 1.02 }
+      };
     case 'fade':
       return {
         initial: { opacity: 0, scale: 0.97 },
