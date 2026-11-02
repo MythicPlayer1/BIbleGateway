@@ -1,7 +1,8 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
+import { VideoOff, Camera } from "lucide-react";
 import { GlobalBackgroundConfig, BackgroundTransitionEffect } from "@/lib/lyrics";
 
 interface GlobalBackgroundLayerProps {
@@ -12,13 +13,135 @@ interface GlobalBackgroundLayerProps {
 
 export function GlobalBackgroundLayer({ config, legacyBgUrl, legacyBgType }: GlobalBackgroundLayerProps) {
   const [slideshowIdx, setSlideshowIdx] = useState(0);
+  const cameraVideoRef = useRef<HTMLVideoElement | null>(null);
+  const streamRef = useRef<MediaStream | null>(null);
+  const [cameraError, setCameraError] = useState<string | null>(null);
 
   const images = config?.slideshow?.images || [];
   const intervalSec = config?.slideshow?.interval || 5;
   const durationSec = config?.slideshow?.transitionDuration || 1.2;
   const effect: BackgroundTransitionEffect = config?.slideshow?.transitionEffect || 'zoom';
   const mode = config?.mode || (legacyBgUrl ? (legacyBgType === 'video' ? 'video' : 'slideshow') : 'none');
-  const opacity = config?.overlayOpacity !== undefined ? config.overlayOpacity : 0.4;
+  const opacity = config?.overlay?.opacity !== undefined
+    ? config.overlay.opacity
+    : (config?.overlayOpacity !== undefined ? config.overlayOpacity : 0.4);
+
+  const overlayColor = config?.overlay?.color || '#000000';
+  const overlayType = config?.overlay?.type || 'uniform';
+  const blurLevel = config?.overlay?.blur || 'none';
+
+  // Backdrop blur styling for soft-focus readability over moving camera/video
+  const blurFilter = blurLevel === 'subtle' ? 'backdrop-blur-[4px]'
+    : blurLevel === 'medium' ? 'backdrop-blur-[9px]'
+    : blurLevel === 'heavy' ? 'backdrop-blur-[16px]'
+    : '';
+
+  // Get CSS background style based on overlayType
+  const getOverlayBackgroundStyle = () => {
+    switch (overlayType) {
+      case 'lower-third':
+        return `linear-gradient(to top, ${overlayColor} 0%, ${overlayColor} 50%, transparent 95%)`;
+      case 'vignette':
+        return `radial-gradient(ellipse at center, transparent 25%, ${overlayColor} 100%)`;
+      case 'top-bottom':
+        return `linear-gradient(to bottom, ${overlayColor} 0%, transparent 35%, transparent 65%, ${overlayColor} 100%)`;
+      case 'uniform':
+      default:
+        return overlayColor;
+    }
+  };
+
+  // Live Camera Stream Lifecycle
+  useEffect(() => {
+    if (mode !== 'camera') {
+      if (streamRef.current) {
+        streamRef.current.getTracks().forEach(track => track.stop());
+        streamRef.current = null;
+      }
+      setCameraError(null);
+      return;
+    }
+
+    let isMounted = true;
+
+    async function initCamera() {
+      try {
+        setCameraError(null);
+        if (typeof navigator === "undefined" || !navigator.mediaDevices?.getUserMedia) {
+          throw new Error("Live camera is not supported in this browser or environment.");
+        }
+
+        // Clean up prior stream before requesting a new one
+        if (streamRef.current) {
+          streamRef.current.getTracks().forEach(track => track.stop());
+          streamRef.current = null;
+        }
+
+        const deviceId = config?.camera?.deviceId;
+        let stream: MediaStream;
+
+        try {
+          stream = await navigator.mediaDevices.getUserMedia({
+            video: deviceId ? { deviceId: { exact: deviceId } } : true,
+            audio: false
+          });
+        } catch (exactErr) {
+          // If the specific deviceId is not available on this machine/display, fallback to any available camera
+          if (deviceId) {
+            console.warn("Selected camera deviceId not found on this screen, falling back to default camera:", exactErr);
+            stream = await navigator.mediaDevices.getUserMedia({
+              video: true,
+              audio: false
+            });
+          } else {
+            throw exactErr;
+          }
+        }
+
+        if (!isMounted) {
+          stream.getTracks().forEach(t => t.stop());
+          return;
+        }
+
+        streamRef.current = stream;
+
+        if (cameraVideoRef.current) {
+          cameraVideoRef.current.srcObject = stream;
+          cameraVideoRef.current.play().catch(() => {});
+        }
+      } catch (err: any) {
+        console.warn("Live Camera Background failed:", err);
+        if (isMounted) {
+          const msg = err?.name === 'NotAllowedError'
+            ? 'Camera permission denied. Please allow camera access in your browser.'
+            : err?.name === 'NotFoundError'
+            ? 'No camera or HDMI capture device found.'
+            : (err?.message || 'Failed to start camera feed.');
+          setCameraError(msg);
+        }
+      }
+    }
+
+    initCamera();
+
+    return () => {
+      isMounted = false;
+      if (streamRef.current) {
+        streamRef.current.getTracks().forEach(track => track.stop());
+        streamRef.current = null;
+      }
+    };
+  }, [mode, config?.camera?.deviceId]);
+
+  // Ensure stream stays bound if video element re-renders
+  useEffect(() => {
+    if (mode === 'camera' && cameraVideoRef.current && streamRef.current) {
+      if (cameraVideoRef.current.srcObject !== streamRef.current) {
+        cameraVideoRef.current.srcObject = streamRef.current;
+        cameraVideoRef.current.play().catch(() => {});
+      }
+    }
+  });
 
   // Auto Slideshow Interval Timer
   useEffect(() => {
@@ -162,10 +285,35 @@ export function GlobalBackgroundLayer({ config, legacyBgUrl, legacyBgType }: Glo
         />
       )}
 
-      {/* Dark transparency overlay for text contrast readability */}
+      {/* 4. LIVE CAMERA / HDMI CAPTURE MODE */}
+      {mode === 'camera' && (
+        <div className="absolute inset-0 w-full h-full overflow-hidden bg-black">
+          <video
+            ref={cameraVideoRef}
+            autoPlay
+            playsInline
+            muted
+            className={`absolute inset-0 w-full h-full object-cover transition-transform duration-300 ${
+              config?.camera?.mirror ? 'scale-x-[-1]' : 'scale-x-100'
+            }`}
+          />
+          {cameraError && (
+            <div className="absolute inset-0 flex flex-col items-center justify-center p-6 text-center text-rose-300 bg-neutral-950/85 backdrop-blur-md z-10 space-y-2">
+              <VideoOff size={42} className="text-rose-400" />
+              <p className="font-bold text-sm tracking-wide">Live Camera Offline</p>
+              <p className="text-xs text-neutral-400 max-w-sm">{cameraError}</p>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Dynamic transparency overlay for text contrast and legibility */}
       <div
-        className="absolute inset-0 w-full h-full bg-black transition-opacity duration-300 pointer-events-none"
-        style={{ opacity }}
+        className={`absolute inset-0 w-full h-full transition-all duration-300 pointer-events-none ${blurFilter}`}
+        style={{
+          background: getOverlayBackgroundStyle(),
+          opacity
+        }}
       />
     </div>
   );

@@ -228,6 +228,12 @@ export const LiveScreenMonitor: React.FC<LiveScreenMonitorProps> = ({
             >
               <Maximize2 size={14} />
             </button>
+            {globalBgConfig?.mode === 'camera' && (
+              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-indigo-950/90 text-indigo-300 border border-indigo-500/50 text-xs font-bold shadow-sm" title={`Live camera background active: ${globalBgConfig.camera?.deviceName || 'Camera'}`}>
+                <span className="w-2 h-2 rounded-full bg-rose-500 animate-pulse"></span>
+                <span>📹 CAM LIVE</span>
+              </span>
+            )}
             <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-950 text-emerald-300 border border-emerald-500/40 text-xs font-bold">
               <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
               SYNC ACTIVE

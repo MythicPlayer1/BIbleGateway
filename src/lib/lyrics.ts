@@ -175,7 +175,7 @@ export function getTextAnimationVariants(effect: TextAnimationEffect = 'slide-up
   }
 }
 
-export type BackgroundMode = 'none' | 'video' | 'slideshow' | 'gradient';
+export type BackgroundMode = 'none' | 'video' | 'slideshow' | 'gradient' | 'camera';
 export type BackgroundTransitionEffect = 'fade' | 'zoom' | 'slide' | 'blur' | 'scale-fade';
 
 export interface BackgroundImageItem {
@@ -199,9 +199,26 @@ export interface GradientConfig {
   presetId?: string;
 }
 
+export interface CameraBackgroundConfig {
+  deviceId?: string;
+  deviceName?: string;
+  mirror?: boolean;
+}
+
+export type OverlayEffectType = 'uniform' | 'lower-third' | 'vignette' | 'top-bottom';
+export type OverlayBlurLevel = 'none' | 'subtle' | 'medium' | 'heavy';
+
+export interface OverlayConfig {
+  opacity: number; // 0 to 1
+  color?: string; // e.g. '#000000', '#030712'
+  type?: OverlayEffectType;
+  blur?: OverlayBlurLevel;
+}
+
 export interface GlobalBackgroundConfig {
   mode: BackgroundMode;
-  overlayOpacity: number; // 0 to 0.9
+  overlayOpacity: number; // 0 to 1 (retained for backward compatibility)
+  overlay?: OverlayConfig;
   slideshow: {
     images: BackgroundImageItem[];
     interval: number; // seconds
@@ -215,6 +232,7 @@ export interface GlobalBackgroundConfig {
     buffer?: ArrayBuffer;
     mime?: string;
   };
+  camera?: CameraBackgroundConfig;
 }
 
 export const GRADIENT_PRESETS = [
@@ -231,6 +249,12 @@ export const GRADIENT_PRESETS = [
 export const DEFAULT_BACKGROUND_CONFIG: GlobalBackgroundConfig = {
   mode: 'none',
   overlayOpacity: 0.4,
+  overlay: {
+    opacity: 0.4,
+    color: '#000000',
+    type: 'uniform',
+    blur: 'none'
+  },
   slideshow: {
     images: [],
     interval: 5,
@@ -245,6 +269,11 @@ export const DEFAULT_BACKGROUND_CONFIG: GlobalBackgroundConfig = {
     angle: 135,
     animation: 'slow-flow',
     presetId: 'midnight-sapphire'
+  },
+  camera: {
+    deviceId: '',
+    deviceName: 'Default Camera',
+    mirror: false
   }
 };
 
