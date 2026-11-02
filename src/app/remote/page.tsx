@@ -1049,22 +1049,36 @@ function RemoteOperatorApp() {
                 </div>
               )}
 
-              {/* Slide Text Content */}
-              <div className="relative z-10 max-h-full overflow-hidden flex flex-col justify-center items-center">
-                <p 
-                  className="text-white font-black leading-snug whitespace-pre-wrap select-none text-xs sm:text-sm drop-shadow-md line-clamp-4"
-                  style={{
-                    fontFamily: getFontFamilyCss(liveState?.displayConfig?.fontFamily),
-                    textShadow: getTextShadowCss(liveState?.displayConfig?.textShadow || 'strong')
-                  }}
+              {/* Slide Text Content with Smooth Animated Transition */}
+              <AnimatePresence mode="wait">
+                <motion.div
+                  key={`${liveState?.activeItemId}-${liveState?.activeSlideIndex}`}
+                  initial={{ opacity: 0, x: 12 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  exit={{ opacity: 0, x: -12 }}
+                  transition={{ duration: 0.18, ease: "easeOut" }}
+                  className="relative z-10 max-h-full overflow-hidden flex flex-col justify-center items-center"
                 >
-                  {liveState?.activeSlideText || "No active slide text"}
-                </p>
-                {liveState?.activeSlideCitation && (
-                  <span className="text-[11px] font-semibold text-indigo-300 mt-1 truncate max-w-[280px]">
-                    {liveState.activeSlideCitation}
-                  </span>
-                )}
+                  <p 
+                    className="text-white font-black leading-snug whitespace-pre-wrap select-none text-xs sm:text-sm drop-shadow-md line-clamp-4"
+                    style={{
+                      fontFamily: getFontFamilyCss(liveState?.displayConfig?.fontFamily),
+                      textShadow: getTextShadowCss(liveState?.displayConfig?.textShadow || 'strong')
+                    }}
+                  >
+                    {liveState?.activeSlideText || "No active slide text"}
+                  </p>
+                  {liveState?.activeSlideCitation && (
+                    <span className="text-[11px] font-semibold text-indigo-300 mt-1 truncate max-w-[280px]">
+                      {liveState.activeSlideCitation}
+                    </span>
+                  )}
+                </motion.div>
+              </AnimatePresence>
+
+              {/* Swipe Helper Cue */}
+              <div className="absolute bottom-1 text-[8px] text-neutral-400 font-mono tracking-wider opacity-50 pointer-events-none">
+                ‹ swipe left / right ›
               </div>
 
               {/* Live Countdown Overlay Badge */}
@@ -1243,22 +1257,24 @@ function RemoteOperatorApp() {
         <div className="fixed bottom-0 left-0 right-0 z-40 px-4 pt-3 pb-[max(env(safe-area-inset-bottom),14px)] bg-neutral-950/95 backdrop-blur-xl border-t border-neutral-800/80 shadow-2xl">
           <div className="max-w-lg mx-auto space-y-2">
             <div className="grid grid-cols-3 gap-3">
-              <button
+              <motion.button
                 type="button"
+                whileTap={{ scale: 0.92 }}
                 onClick={handlePrev}
                 disabled={!currentPermissions.canControlSlides}
-                className={`py-4 rounded-2xl font-black text-sm flex items-center justify-center gap-1.5 border shadow-lg transition-all touch-manipulation select-none ${
+                className={`py-4 rounded-2xl font-black text-sm flex items-center justify-center gap-1.5 border shadow-lg transition-colors touch-manipulation select-none cursor-pointer ${
                   currentPermissions.canControlSlides
-                    ? "bg-neutral-900 hover:bg-neutral-800 active:scale-[0.93] text-white border-neutral-700 active:bg-neutral-700"
+                    ? "bg-neutral-900 hover:bg-neutral-800 text-white border-neutral-700 active:bg-neutral-700"
                     : "bg-neutral-900/50 text-neutral-500 border-neutral-800 cursor-not-allowed opacity-50"
                 }`}
               >
                 <ChevronLeft size={20} />
                 <span>PREV</span>
-              </button>
+              </motion.button>
 
-              <button
+              <motion.button
                 type="button"
+                whileTap={{ scale: 0.92 }}
                 disabled={!currentPermissions.canControlSlides}
                 onClick={() => {
                   if (!currentPermissions.canControlSlides) {
@@ -1272,12 +1288,12 @@ function RemoteOperatorApp() {
                     showToast("Slide is live!");
                   }
                 }}
-                className={`py-4 rounded-2xl font-black text-sm flex items-center justify-center gap-1.5 shadow-xl transition-all touch-manipulation select-none ${
+                className={`py-4 rounded-2xl font-black text-sm flex items-center justify-center gap-1.5 shadow-xl transition-colors touch-manipulation select-none cursor-pointer ${
                   !currentPermissions.canControlSlides
                     ? "bg-neutral-800 text-neutral-400 border border-neutral-700 cursor-not-allowed opacity-50"
                     : isInPreviewMode
-                      ? "bg-amber-500 text-black ring-4 ring-amber-500/30 animate-pulse active:scale-[0.93]"
-                      : "bg-emerald-600 hover:bg-emerald-500 text-white shadow-emerald-950/50 active:scale-[0.93]"
+                      ? "bg-amber-500 text-black ring-4 ring-amber-500/30 animate-pulse"
+                      : "bg-emerald-600 hover:bg-emerald-500 text-white shadow-emerald-950/50"
                 }`}
               >
                 {currentPermissions.canControlSlides && <span className="w-2.5 h-2.5 rounded-full bg-white animate-ping mr-0.5"></span>}
@@ -1289,21 +1305,22 @@ function RemoteOperatorApp() {
                       : `LIVE (${(liveState?.activeSlideIndex ?? 0) + 1}/${liveState?.totalSlidesInItem || 1})`
                   }
                 </span>
-              </button>
+              </motion.button>
 
-              <button
+              <motion.button
                 type="button"
+                whileTap={{ scale: 0.92 }}
                 onClick={handleNext}
                 disabled={!currentPermissions.canControlSlides}
-                className={`py-4 rounded-2xl font-black text-sm flex items-center justify-center gap-1.5 shadow-lg border transition-all touch-manipulation select-none ${
+                className={`py-4 rounded-2xl font-black text-sm flex items-center justify-center gap-1.5 shadow-lg border transition-colors touch-manipulation select-none cursor-pointer ${
                   currentPermissions.canControlSlides
-                    ? "bg-indigo-600 hover:bg-indigo-500 active:scale-[0.93] text-white shadow-indigo-950/50 border-indigo-400/40 active:bg-indigo-700"
+                    ? "bg-indigo-600 hover:bg-indigo-500 text-white shadow-indigo-950/50 border-indigo-400/40 active:bg-indigo-700"
                     : "bg-neutral-900/50 text-neutral-500 border-neutral-800 cursor-not-allowed opacity-50"
                 }`}
               >
                 <span>NEXT</span>
                 <ChevronRight size={20} />
-              </button>
+              </motion.button>
             </div>
             <div className="hidden sm:flex items-center justify-center gap-2 text-[10px] text-neutral-500 font-medium">
               <span>⌨️ Bluetooth Clicker / Keyboard: Space / Arrows / B (Blackout)</span>

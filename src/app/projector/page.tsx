@@ -4,7 +4,7 @@ import { useEffect, useState, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { getGlobalBackground, getScheduleMedia } from "@/lib/mediaStorage";
 import { GlobalBackgroundLayer } from "@/components/GlobalBackgroundLayer";
-import { QrCode, ZoomIn, ZoomOut, RotateCcw } from "lucide-react";
+import { QrCode, ZoomIn, ZoomOut, RotateCcw, Music, BookOpen } from "lucide-react";
 import type {
   SlideLayout, TextAlign, AccentColor, CustomSlideTheme,
   TickerConfig, TickerTheme, TickerPosition, TickerSpeed, TickerFontSize,
@@ -39,6 +39,83 @@ function getResponsiveFontSize(text: string, scale: number = 1.0) {
     return `clamp(${Math.round(20 * scale)}px, ${2.7 * scale}vw, ${Math.round(52 * scale)}px)`;
   }
 }
+
+// Sacred Ambient Particle Layer for live sanctuary projection
+const SacredAmbientParticles: React.FC = () => {
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    let animFrame: number;
+    let width = (canvas.width = window.innerWidth);
+    let height = (canvas.height = window.innerHeight);
+
+    const handleResize = () => {
+      if (!canvas) return;
+      width = canvas.width = window.innerWidth;
+      height = canvas.height = window.innerHeight;
+    };
+    window.addEventListener('resize', handleResize);
+
+    // 26 subtle holy dust particles floating upward gently
+    const particles = Array.from({ length: 26 }, () => ({
+      x: Math.random() * width,
+      y: Math.random() * height,
+      size: Math.random() * 2.2 + 0.8,
+      speedX: (Math.random() - 0.5) * 0.35,
+      speedY: -Math.random() * 0.4 - 0.15,
+      opacity: Math.random() * 0.35 + 0.15,
+      glow: Math.random() > 0.55
+    }));
+
+    const render = () => {
+      ctx.clearRect(0, 0, width, height);
+
+      for (const p of particles) {
+        p.x += p.speedX;
+        p.y += p.speedY;
+
+        if (p.y < -10) {
+          p.y = height + 10;
+          p.x = Math.random() * width;
+        }
+        if (p.x < -10) p.x = width + 10;
+        if (p.x > width + 10) p.x = -10;
+
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+        ctx.fillStyle = `rgba(253, 230, 138, ${p.opacity})`;
+        if (p.glow) {
+          ctx.shadowBlur = 8;
+          ctx.shadowColor = 'rgba(253, 224, 71, 0.6)';
+        } else {
+          ctx.shadowBlur = 0;
+        }
+        ctx.fill();
+      }
+
+      animFrame = requestAnimationFrame(render);
+    };
+
+    render();
+
+    return () => {
+      cancelAnimationFrame(animFrame);
+      window.removeEventListener('resize', handleResize);
+    };
+  }, []);
+
+  return (
+    <canvas 
+      ref={canvasRef} 
+      className="absolute inset-0 pointer-events-none z-15 opacity-70"
+    />
+  );
+};
 
 export default function Projector() {
   const [verse, setVerse] = useState<{
@@ -76,6 +153,46 @@ export default function Projector() {
 
   // Live Scrolling Ticker State
   const [ticker, setTicker] = useState<TickerConfig>(DEFAULT_TICKER_CONFIG);
+
+  // Animated Song / Scripture Intro Lower-Third Banner State
+  const [introBanner, setIntroBanner] = useState<{ title: string; subtitle?: string; type: 'song' | 'scripture' | 'general' } | null>(null);
+  const lastIntroKeyRef = useRef<string>('');
+  const introTimerRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Auto-trigger song / scripture intro lower-third banner on new song or passage
+  useEffect(() => {
+    if (isTextHidden || !verse) {
+      setIntroBanner(null);
+      return;
+    }
+
+    const currentKey = (verse.title || verse.reference || '').trim();
+    if (!currentKey || currentKey === lastIntroKeyRef.current) return;
+
+    lastIntroKeyRef.current = currentKey;
+
+    const isScripture = !!verse.reference && (
+      verse.reference.includes(':') || 
+      verse.reference.toLowerCase().includes('chapter') || 
+      verse.reference.toLowerCase().includes('अध्याय')
+    );
+    const isSong = !isScripture && (!!verse.title || verse.layout === 'standard');
+
+    setIntroBanner({
+      title: verse.title || verse.reference || 'Worship Slide',
+      subtitle: isScripture ? verse.reference : (verse.subtitle || 'Proclaim Sanctuary'),
+      type: isScripture ? 'scripture' : (isSong ? 'song' : 'general')
+    });
+
+    if (introTimerRef.current) clearTimeout(introTimerRef.current);
+    introTimerRef.current = setTimeout(() => {
+      setIntroBanner(null);
+    }, 4500);
+
+    return () => {
+      if (introTimerRef.current) clearTimeout(introTimerRef.current);
+    };
+  }, [verse.title, verse.reference, isTextHidden]);
 
   // Display & Typography Customization State (SSR-safe initial defaults, hydrated via useEffect)
   const [displayConfig, setDisplayConfig] = useState<ProjectorDisplayConfig>(DEFAULT_DISPLAY_CONFIG);
@@ -779,6 +896,9 @@ export default function Projector() {
       {/* 1. Global Background Layer */}
       <GlobalBackgroundLayer config={bgConfig} legacyBgUrl={bgUrl} legacyBgType={bgType} />
 
+      {/* 1b. Sacred Ambient Particles Layer */}
+      <SacredAmbientParticles />
+
       {/* 2. Foreground Presentation Slide */}
       <AnimatePresence mode="wait">
         {/* A. Foreground Media Presentation Slide (Video / Photo with Smooth Crossfade & Pan-Zoom) */}
@@ -1123,7 +1243,21 @@ export default function Projector() {
                       fontWeight: displayConfig.textWeight === 'black' ? 900 : displayConfig.textWeight === 'bold' ? 700 : 500
                     }}
                   >
-                    {verse.text || verse.title}
+                    {textAnim.effect === 'kinetic' ? (
+                      String(verse.text || verse.title || '').split(' ').map((word, wIdx) => (
+                        <motion.span
+                          key={`${word}-${wIdx}`}
+                          initial={{ opacity: 0, y: 10, filter: 'blur(4px)' }}
+                          animate={{ opacity: 1, y: 0, filter: 'blur(0px)' }}
+                          transition={{ duration: 0.28, delay: Math.min(wIdx * 0.035, 1.2), ease: 'easeOut' }}
+                          className="inline-block mr-[0.28em]"
+                        >
+                          {word}
+                        </motion.span>
+                      ))
+                    ) : (
+                      verse.text || verse.title
+                    )}
                   </p>
                 )}
 
@@ -1228,7 +1362,13 @@ export default function Projector() {
                   {ticker.badgeLabel || 'NOTICE'}
                 </span>
               )}
-              <div className="overflow-hidden whitespace-nowrap flex-1">
+              <div 
+                className="overflow-hidden whitespace-nowrap flex-1 relative"
+                style={{
+                  maskImage: 'linear-gradient(to right, transparent, black 3%, black 97%, transparent)',
+                  WebkitMaskImage: 'linear-gradient(to right, transparent, black 3%, black 97%, transparent)'
+                }}
+              >
                 <div
                   className={`inline-block animate-marquee font-bold tracking-wide ${styles.text}`}
                   style={{
@@ -1243,6 +1383,41 @@ export default function Projector() {
           </div>
         );
       })()}
+
+      {/* Animated Song & Scripture Intro Lower-Third Banner */}
+      <AnimatePresence>
+        {introBanner && !isTextHidden && (
+          <motion.div
+            key={`intro-banner-${introBanner.title}`}
+            initial={{ opacity: 0, y: 50, scale: 0.95 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: 30, scale: 0.95 }}
+            transition={{ duration: 0.45, ease: [0.16, 1, 0.3, 1] }}
+            className="absolute bottom-8 left-8 z-40 flex items-center gap-3.5 p-3.5 pr-6 bg-black/85 backdrop-blur-xl border border-white/20 rounded-2xl shadow-2xl pointer-events-none"
+          >
+            <div className={`p-2.5 rounded-xl border ${
+              introBanner.type === 'scripture'
+                ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
+                : 'bg-indigo-500/20 text-indigo-300 border-indigo-500/40'
+            }`}>
+              {introBanner.type === 'scripture' ? <BookOpen size={20} /> : <Music size={20} />}
+            </div>
+            <div className="text-left">
+              <p className="text-[10px] uppercase tracking-wider font-bold text-neutral-400">
+                {introBanner.type === 'scripture' ? 'Holy Scripture' : 'Worship Song'}
+              </p>
+              <h3 className="text-base sm:text-lg font-black text-white leading-tight">
+                {introBanner.title}
+              </h3>
+              {introBanner.subtitle && (
+                <p className="text-xs text-neutral-300 font-medium mt-0.5">
+                  {introBanner.subtitle}
+                </p>
+              )}
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

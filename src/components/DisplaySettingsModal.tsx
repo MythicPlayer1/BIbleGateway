@@ -18,6 +18,7 @@ interface DisplaySettingsModalProps {
   onClose: () => void;
   displayConfig: ProjectorDisplayConfig;
   onUpdateDisplayConfig: (config: ProjectorDisplayConfig) => void;
+  onPreviewSplash?: () => void;
 }
 
 const COLOR_PRESETS = [
@@ -52,7 +53,8 @@ export const DisplaySettingsModal: React.FC<DisplaySettingsModalProps> = ({
   isOpen,
   onClose,
   displayConfig = DEFAULT_DISPLAY_CONFIG,
-  onUpdateDisplayConfig
+  onUpdateDisplayConfig,
+  onPreviewSplash
 }) => {
   const [config, setConfig] = useState<ProjectorDisplayConfig>(displayConfig);
 
@@ -396,6 +398,40 @@ export const DisplaySettingsModal: React.FC<DisplaySettingsModalProps> = ({
                   }`}
                 />
               </button>
+            </div>
+
+            {/* 6. Welcome Splash & Capabilities Tour */}
+            <div className="p-4 bg-gradient-to-r from-indigo-950/40 via-neutral-900 to-neutral-900 border border-indigo-500/30 rounded-2xl flex items-center justify-between gap-4">
+              <div className="flex items-start gap-3">
+                <div className="p-2 bg-indigo-600/20 text-indigo-400 rounded-xl border border-indigo-500/30 shrink-0 mt-0.5">
+                  <Sparkles size={18} />
+                </div>
+                <div>
+                  <h4 className="text-xs font-bold text-white flex items-center gap-1.5">
+                    <span>Welcome Splash & Overview</span>
+                    <span className="px-1.5 py-0.2 bg-indigo-900/80 text-indigo-300 text-[9px] rounded font-bold uppercase">
+                      Startup Tour
+                    </span>
+                  </h4>
+                  <p className="text-[11px] text-neutral-400 leading-snug mt-0.5">
+                    View the Proclaim Sanctuary cinematic introduction and capabilities overview.
+                  </p>
+                </div>
+              </div>
+
+              {onPreviewSplash && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    onClose();
+                    onPreviewSplash();
+                  }}
+                  className="px-3.5 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-bold shadow-md shadow-indigo-600/20 transition-all active:scale-95 flex items-center gap-1.5 shrink-0 cursor-pointer"
+                >
+                  <Sparkles size={13} />
+                  <span>Preview Splash</span>
+                </button>
+              )}
             </div>
           </div>
 

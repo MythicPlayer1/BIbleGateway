@@ -43,12 +43,16 @@ export const ScheduleItemCard: React.FC<ScheduleItemCardProps> = ({
       }}
       transition={{ type: "spring", stiffness: 450, damping: 35 }}
       onClick={onSelect}
-      className={`group flex items-center justify-between p-3.5 rounded-2xl border cursor-pointer relative select-none ${
+      className={`group flex items-center justify-between p-3.5 rounded-2xl border cursor-pointer relative select-none overflow-hidden transition-all ${
         isCurrent
-          ? 'bg-indigo-950/70 border-indigo-500 text-white shadow-lg ring-1 ring-indigo-500/40'
+          ? 'bg-indigo-950/80 border-indigo-500 text-white shadow-xl ring-1 ring-indigo-500/40'
           : 'bg-neutral-900/70 border-neutral-800 text-neutral-300 hover:bg-neutral-900 hover:border-neutral-700'
       }`}
     >
+      {/* Active Live Border Shimmer */}
+      {isCurrent && (
+        <div className="absolute top-0 left-0 right-0 h-[2px] bg-gradient-to-r from-transparent via-indigo-400 to-transparent animate-pulse" />
+      )}
       <div className="flex items-center gap-3 min-w-0">
         <div 
           onPointerDown={(e) => {
@@ -95,7 +99,15 @@ export const ScheduleItemCard: React.FC<ScheduleItemCardProps> = ({
         </div>
 
         <div className="truncate">
-          <p className="font-bold text-sm truncate text-white">{item.title}</p>
+          <div className="flex items-center gap-2">
+            <p className="font-bold text-sm truncate text-white">{item.title}</p>
+            {isCurrent && (
+              <span className="inline-flex items-center gap-1 text-[9px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/40 shrink-0 shadow-sm">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping" />
+                LIVE
+              </span>
+            )}
+          </div>
           <p className="text-[11px] text-neutral-400 truncate">{item.subtitle || item.type}</p>
         </div>
       </div>

@@ -16,6 +16,7 @@ import {
   DEFAULT_DISPLAY_CONFIG, getTextShadowCss, getFontFamilyCss
 } from "@/lib/lyrics";
 import { GlobalBackgroundLayer } from "@/components/GlobalBackgroundLayer";
+import { AnimatedCounter } from "@/components/AnimatedCounter";
 
 function getResponsivePreviewFontSize(text: string, scale: number = 1.0) {
   if (!text) return `${24 * scale}px`;
@@ -156,15 +157,41 @@ export const LiveScreenMonitor: React.FC<LiveScreenMonitorProps> = ({
               <button
                 type="button"
                 onClick={onOpenBroadcastModal}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl border text-xs font-bold transition-all shadow-sm ${
+                className={`flex items-center gap-2 px-3.5 py-1.5 rounded-xl border text-xs font-bold transition-all shadow-sm ${
                   isBroadcasting
-                    ? "bg-emerald-950/90 text-emerald-300 border-emerald-500/50 hover:bg-emerald-900 shadow-emerald-900/20"
+                    ? "bg-emerald-950/90 text-emerald-300 border-emerald-500/50 hover:bg-emerald-900 shadow-emerald-900/20 ring-1 ring-emerald-500/20"
                     : "bg-neutral-800 hover:bg-neutral-700 text-neutral-200 hover:text-white border-neutral-700"
                 }`}
                 title="Broadcast projector feed online to TVs, iPads, and OBS"
               >
-                <Radio size={13} className={isBroadcasting ? "text-emerald-400 animate-pulse" : "text-neutral-400"} />
-                <span suppressHydrationWarning>{isBroadcasting ? `ON AIR (${connectedClientsCount})` : "Broadcast"}</span>
+                {isBroadcasting ? (
+                  <div className="flex items-center gap-1.5">
+                    <span className="relative flex h-2 w-2">
+                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                      <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+                    </span>
+                    {/* Live Equalizer / Waveform Bars */}
+                    <div className="flex items-end gap-0.5 h-3 px-0.5">
+                      <span className="w-0.5 bg-emerald-400 rounded-full animate-[pulse_0.6s_ease-in-out_infinite] h-2"></span>
+                      <span className="w-0.5 bg-emerald-300 rounded-full animate-[pulse_0.85s_ease-in-out_infinite_0.15s] h-3"></span>
+                      <span className="w-0.5 bg-emerald-400 rounded-full animate-[pulse_0.7s_ease-in-out_infinite_0.3s] h-2.5"></span>
+                    </div>
+                  </div>
+                ) : (
+                  <Radio size={13} className="text-neutral-400" />
+                )}
+                <span suppressHydrationWarning className="inline-flex items-center gap-1">
+                  {isBroadcasting ? (
+                    <>
+                      <span>ON AIR</span>
+                      <span>(</span>
+                      <AnimatedCounter value={connectedClientsCount} />
+                      <span>)</span>
+                    </>
+                  ) : (
+                    "Broadcast"
+                  )}
+                </span>
               </button>
             )}
 
@@ -201,6 +228,12 @@ export const LiveScreenMonitor: React.FC<LiveScreenMonitorProps> = ({
             >
               <Maximize2 size={14} />
             </button>
+            {globalBgConfig?.mode === 'camera' && (
+              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-indigo-950/90 text-indigo-300 border border-indigo-500/50 text-xs font-bold shadow-sm" title={`Live camera background active: ${globalBgConfig.camera?.deviceName || 'Camera'}`}>
+                <span className="w-2 h-2 rounded-full bg-rose-500 animate-pulse"></span>
+                <span>📹 CAM LIVE</span>
+              </span>
+            )}
             <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-950 text-emerald-300 border border-emerald-500/40 text-xs font-bold">
               <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
               SYNC ACTIVE
@@ -226,7 +259,8 @@ export const LiveScreenMonitor: React.FC<LiveScreenMonitorProps> = ({
                   { id: 'zoom-in', label: '🔍 Zoom' },
                   { id: 'flip', label: '🔄 3D Flip' },
                   { id: 'blur', label: '🌫️ Blur' },
-                  { id: 'pop', label: '💥 Pop' }
+                  { id: 'pop', label: '💥 Pop' },
+                  { id: 'kinetic', label: '📖 Kinetic Words' }
                 ].map(fx => (
                   <button
                     key={fx.id}
@@ -273,7 +307,11 @@ export const LiveScreenMonitor: React.FC<LiveScreenMonitorProps> = ({
         <div className="p-5 flex flex-col justify-center">
           <div
             ref={previewContainerRef}
-            className={`w-full aspect-video min-h-[380px] md:min-h-[460px] max-h-[600px] bg-[#030303] rounded-2xl relative flex flex-col items-center justify-center p-6 md:p-12 overflow-hidden shadow-2xl border border-neutral-800/80 ${isTextHidden ? 'opacity-40' : 'opacity-100'}`}
+            className={`w-full aspect-video min-h-[380px] md:min-h-[460px] max-h-[600px] bg-[#030303] rounded-2xl relative flex flex-col items-center justify-center p-6 md:p-12 overflow-hidden shadow-2xl border transition-all duration-300 ${
+              isBroadcasting 
+                ? 'border-emerald-500/40 ring-1 ring-emerald-500/20 shadow-[0_0_35px_rgba(16,185,129,0.12)]' 
+                : 'border-neutral-800/80'
+            } ${isTextHidden ? 'opacity-40' : 'opacity-100'}`}
           >
             {/* 1. Global Projector Background Media Layer */}
             <GlobalBackgroundLayer config={globalBgConfig} legacyBgUrl={localBgUrl} legacyBgType={localBgType} />
@@ -545,7 +583,21 @@ export const LiveScreenMonitor: React.FC<LiveScreenMonitorProps> = ({
                         fontWeight: displayConfig.textWeight === 'black' ? 900 : displayConfig.textWeight === 'bold' ? 700 : 500
                       }}
                     >
-                      {currentPreviewText}
+                      {textAnimConfig.effect === 'kinetic' ? (
+                        currentPreviewText.split(' ').map((word, wIdx) => (
+                          <motion.span
+                            key={`${word}-${wIdx}`}
+                            initial={{ opacity: 0, y: 8, filter: 'blur(3px)' }}
+                            animate={{ opacity: 1, y: 0, filter: 'blur(0px)' }}
+                            transition={{ duration: 0.25, delay: Math.min(wIdx * 0.035, 1.2), ease: 'easeOut' }}
+                            className="inline-block mr-[0.28em]"
+                          >
+                            {word}
+                          </motion.span>
+                        ))
+                      ) : (
+                        currentPreviewText
+                      )}
                     </p>
                   )}
 

@@ -1,12 +1,14 @@
 "use client";
 
 import React from "react";
+import { motion } from "framer-motion";
 import { 
   BookOpen, Calendar, Music, Megaphone, 
   EyeOff, Radio, MonitorPlay, Sparkles, Cast 
 } from "lucide-react";
 import type { TickerConfig, ProjectorDisplayConfig } from "@/lib/lyrics";
 import { Sliders } from "lucide-react";
+import { AnimatedCounter } from "@/components/AnimatedCounter";
 
 interface HeaderProps {
   appMode: 'schedule' | 'bible' | 'lyrics';
@@ -23,6 +25,7 @@ interface HeaderProps {
   onOpenProjector: () => void;
   isHostScreenSharing?: boolean;
   onToggleScreenShare?: () => void;
+  onOpenSplash?: () => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -39,61 +42,74 @@ export const Header: React.FC<HeaderProps> = ({
   isDisplayConnected,
   onOpenProjector,
   isHostScreenSharing,
-  onToggleScreenShare
+  onToggleScreenShare,
+  onOpenSplash
 }) => {
   return (
     <header className="bg-[#0c0c0c] border-b border-neutral-800/80 sticky top-0 z-30 shadow-md">
       <div className="max-w-[1700px] mx-auto px-5 h-16 flex items-center justify-between gap-3">
         {/* App Title & Logo */}
-        <div className="flex items-center gap-3 shrink-0">
-          <div className="bg-gradient-to-tr from-indigo-600 to-violet-500 text-white p-2 rounded-xl shadow-md shadow-indigo-500/20">
+        <button
+          onClick={onOpenSplash}
+          className="flex items-center gap-3 shrink-0 text-left group cursor-pointer select-none rounded-xl p-1.5 -m-1.5 hover:bg-neutral-900/80 transition-colors"
+          title="About Proclaim Sanctuary • Click to view Welcome Intro"
+        >
+          <div className="bg-gradient-to-tr from-indigo-600 to-violet-500 text-white p-2 rounded-xl shadow-md shadow-indigo-500/20 group-hover:scale-105 group-hover:shadow-indigo-500/40 transition-all">
             <BookOpen size={18} />
           </div>
           <div>
-            <h1 className="text-base font-black tracking-tight bg-clip-text text-transparent bg-gradient-to-r from-indigo-300 via-white to-violet-300 leading-tight">
-              PROCLAIM SANCTUARY
-            </h1>
-            <p className="text-[10px] font-semibold text-neutral-400 uppercase tracking-wider leading-none mt-0.5">
+            <div className="flex items-center gap-1.5">
+              <h1 className="text-base font-black tracking-tight bg-clip-text text-transparent bg-gradient-to-r from-indigo-300 via-white to-violet-300 leading-tight">
+                PROCLAIM SANCTUARY
+              </h1>
+              <Sparkles size={11} className="text-amber-400 opacity-60 group-hover:opacity-100 group-hover:scale-110 transition-all" />
+            </div>
+            <p className="text-[10px] font-semibold text-neutral-400 uppercase tracking-wider leading-none mt-0.5 group-hover:text-indigo-300 transition-colors">
               Bible & Worship Suite
             </p>
           </div>
-        </div>
+        </button>
 
-        {/* Mode Switcher Tabs */}
-        <div className="flex bg-neutral-900/90 p-1 rounded-xl border border-neutral-800 shadow-inner">
-          <button
-            onClick={() => switchAppMode('schedule')}
-            className={`flex items-center gap-2 px-4 py-2 rounded-lg font-bold text-xs uppercase tracking-wider transition-all ${
-              appMode === 'schedule'
-                ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/30'
-                : 'text-neutral-400 hover:text-neutral-200'
-            }`}
-          >
-            <Calendar size={14} />
-            <span>Service Schedule</span>
-          </button>
-          <button
-            onClick={() => switchAppMode('bible')}
-            className={`flex items-center gap-2 px-4 py-2 rounded-lg font-bold text-xs uppercase tracking-wider transition-all ${
-              appMode === 'bible'
-                ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/30'
-                : 'text-neutral-400 hover:text-neutral-200'
-            }`}
-          >
-            <BookOpen size={14} />
-            <span>Scripture</span>
-          </button>
-          <button
-            onClick={() => switchAppMode('lyrics')}
-            className={`flex items-center gap-2 px-4 py-2 rounded-lg font-bold text-xs uppercase tracking-wider transition-all ${
-              appMode === 'lyrics'
-                ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/30'
-                : 'text-neutral-400 hover:text-neutral-200'
-            }`}
-          >
-            <Music size={14} />
-            <span>Song Library ({songsCount})</span>
-          </button>
+        {/* Mode Switcher Tabs with Fluid Spring Pill */}
+        <div className="flex bg-neutral-900/90 p-1 rounded-xl border border-neutral-800 shadow-inner relative">
+          {[
+            { id: 'schedule', label: 'Service Schedule', icon: Calendar },
+            { id: 'bible', label: 'Scripture', icon: BookOpen },
+            { 
+              id: 'lyrics', 
+              label: (
+                <span className="inline-flex items-center gap-1">
+                  <span>Song Library</span>
+                  <span>(</span>
+                  <AnimatedCounter value={songsCount} />
+                  <span>)</span>
+                </span>
+              ), 
+              icon: Music 
+            }
+          ].map((tab) => {
+            const isActive = appMode === tab.id;
+            const Icon = tab.icon;
+            return (
+              <button
+                key={tab.id}
+                onClick={() => switchAppMode(tab.id as 'schedule' | 'bible' | 'lyrics')}
+                className={`relative flex items-center gap-2 px-4 py-2 rounded-lg font-bold text-xs uppercase tracking-wider transition-colors z-10 select-none cursor-pointer ${
+                  isActive ? 'text-white' : 'text-neutral-400 hover:text-neutral-200'
+                }`}
+              >
+                {isActive && (
+                  <motion.div
+                    layoutId="activeModeTabPill"
+                    className="absolute inset-0 bg-gradient-to-r from-indigo-600 to-indigo-500 rounded-lg shadow-md shadow-indigo-600/40 -z-10"
+                    transition={{ type: "spring", stiffness: 480, damping: 36 }}
+                  />
+                )}
+                <Icon size={14} className={isActive ? "text-white scale-105 transition-transform" : "text-neutral-400"} />
+                <span>{tab.label}</span>
+              </button>
+            );
+          })}
         </div>
 
         {/* Top Live Actions */}
